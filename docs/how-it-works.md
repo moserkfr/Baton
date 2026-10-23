@@ -107,6 +107,64 @@ generator drifts away from these targets.
 
 ## Helper library and cooperative parker (Phase 2)
 
+**What it does.** `gpuq_client` is the small library a student's script imports. It registers with
+the daemon, caps the process's GPU memory to its slot, reports memory use every second, and obeys
+`park` and `resume` messages. Code: `baton/client/` (`tensor_parking.py` moves the tensors,
+`gpuq_client.py` does the talking), and the shared wire format is in `baton/protocol.py`.
+
+**How parking works, step by step.**
+1. The student tells the library what lives on the GPU: `gq.track(model)`, `gq.track(optimizer)`,
+   `gq.track(data_tensor)`. From those, the parker finds every parameter, gradient, buffer (e.g.
+   BatchNorm statistics) and optimizer state tensor.
+2. On `park`, for every tensor *that is on the GPU*, its bytes are copied into a pinned (page-locked)
+   host buffer. Then the tensor is re-pointed at that buffer with `t.data = buffer`. This is the key
+   trick: the tensor *object* stays the same, so the student's variables, the model and the optimizer
+   all still work; they just point at host memory now.
+3. GPU memory is released: garbage collection, cuBLAS's workspace is freed, and `torch.cuda.empty_cache()`
+   hands the memory back to the driver so another process can use it.
+4. On `resume`, each tensor gets a fresh GPU allocation on its **original device**, the bytes are
+   copied back, and the tensor is re-pointed again.
+
+**Why these choices.**
+- *Original device, not "everything to cuda".* Adam keeps its `step` counter on the CPU on purpose.
+  Moving it to the GPU breaks `optimizer.step()`. We only move what was on a GPU and remember where it was.
+- *Reused pinned buffers.* Copies from pinned memory are fast (DMA), but allocating pinned memory is
+  slow. So buffers are allocated once (first park, or up front with `prealloc()`) and reused. The cost:
+  that host RAM stays reserved for the student even while they run.
+- *Parking only at a safe point.* GPU work happens inside `with gq.step(): ...`. Park runs on a
+  background thread and takes the same lock as `step()`, so it waits for a running step to finish and
+  never moves a tensor while a kernel uses it. It has to be a background thread: an idle student never
+  reaches the next step, so their main thread would never get a chance to park.
+- *Coming back is automatic.* Calling `gq.step()` while parked sends `request` to the daemon and
+  blocks until `resume` arrives. The student's code doesn't change at all.
+- *Self-reported PID and memory.* On Windows a venv's `python.exe` is a launcher, so the PID a parent
+  sees is wrong; the client sends `os.getpid()`. NVML can't report per-process memory under WDDM, so
+  the client reports `torch.cuda.memory_reserved()`.
+- *Fail open.* If the daemon dies, the client restores its tensors and keeps working. A broken
+  Baton must never block a student.
+
+**Measured** (`results/park_bench.md`, RTX 3050 Laptop):
+
+| State | First park (incl. pinned alloc) | Park, reused buffers | Restore |
+| --- | --- | --- | --- |
+| 0.56 GiB | 0.54 s | 0.26 s | 0.08 s |
+| 1.06 GiB | 0.87 s | 0.30 s | 0.12 s |
+| 2.06 GiB | 1.74 s | 0.42 s | 0.25 s |
+
+While parked, device memory drops to the CUDA context (~87 MiB) plus ~18 MiB. Checksums match after
+every round trip, and training after a park/restore produces **bit-identical** losses to training
+without one (`tests/gpu/test_tensor_parking.py`).
+
+**Limits to say out loud.** Only tracked tensors move. A GPU tensor the student never registered stays
+on the GPU and still counts against memory (the daemon sees it in the memory report). Views that share
+storage with a tracked tensor are not handled specially. The CUDA context stays; only the driver-level
+`cuda-checkpoint` parker can free that.
+
+**The daemon-side interface** (`baton/parkers/base.py`): `park(session)` and
+`resume(session, slot, cap_fraction)`. A parker returns either a finished result or "pending" (the
+cooperative parker just sends a message and the client's `parked`/`resumed` reply completes it). That
+lets the subprocess-based `cuda-checkpoint` parker plug in unchanged.
+
 ## Daemon (Phase 3)
 
 ## Mini-lab and demo scenario (Phase 4)
