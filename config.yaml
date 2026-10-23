@@ -42,6 +42,8 @@ simulator:
   gpus_per_machine: 2
   students: 40
   days: 5                    # simulated working days
+  sessions_per_student_day: 0.45   # mean notebook sessions per student per day (load knob)
+  grace_min: 5               # warning -> park in the simulated lab
   idle_window_min: 30        # park-and-restore / culler idle window (swept 10/30/60)
   park_s: 1.2                # measured on the laptop (2.4 GiB: 1.0-1.4 s)
   restore_s: 0.27            # measured with pinned memory
