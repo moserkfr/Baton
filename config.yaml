@@ -1,0 +1,49 @@
+# Baton configuration. Every threshold the daemon uses lives here.
+# Times are in seconds unless the key says otherwise. Demo-friendly values are used
+# by default; a real lab would use idle_window_s: 1800 (30 min) and grace_period_s: 300.
+
+daemon:
+  host: 127.0.0.1
+  port: 7311                 # TCP control channel, one JSON object per line
+  poll_interval_s: 1.0       # how often the monitor samples NVML and the policy runs
+  dry_run: false             # true = log every decision but never warn/park anyone
+  db_path: data/state.db     # SQLite: sessions, slots, queue snapshot, event log
+  gpu_index: 0
+  report_timeout_s: 15       # a client silent for this long is considered gone
+
+policy:
+  idle_window_s: 30          # holds memory + utilization below threshold this long -> Idle
+  grace_period_s: 10         # time between the warning and the park
+  util_threshold_pct: 5      # compute % at or below this counts as "no compute"
+  min_memory_mib: 64         # a session holding less than this is not worth parking
+  never_park_above_pct: 30   # safety rule: never park while recent utilization is above this
+  whitelist_users: []        # users whose sessions are never parked (long training runs)
+
+slots:
+  count: 2                   # virtual slots on this GPU (real GPUs on a lab server)
+  cap_gib: 2.2               # per-slot memory cap, enforced with set_per_process_memory_fraction
+
+queue:
+  usage_halflife_h: 24       # recent GPU-hours decay with this half-life
+  usage_weight_s_per_gpuh: 600   # each recent GPU-hour costs this many seconds of "wait credit"
+  returning_priority_s: 120  # a parked owner who returns gets priority for this long
+
+parker:
+  kind: cooperative          # cooperative | cuda_checkpoint (Linux only, driver 570+)
+  park_timeout_s: 20         # give up on a park that takes longer than this
+
+dashboard:
+  host: 127.0.0.1
+  port: 8000
+
+simulator:
+  seed: 42
+  machines: 4
+  gpus_per_machine: 2
+  students: 40
+  days: 5                    # simulated working days
+  idle_window_min: 30        # park-and-restore / culler idle window (swept 10/30/60)
+  park_s: 1.2                # measured on the laptop (2.4 GiB: 1.0-1.4 s)
+  restore_s: 0.27            # measured with pinned memory
+  batch_jobs_per_day: 12     # Helios-sampled batch jobs added to the notebook load
+  helios_cluster: Venus      # which Helios cluster log to sample from
