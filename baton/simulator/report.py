@@ -135,10 +135,14 @@ def wait_chart(res, path: Path) -> None:
 def line_chart(xs, series: dict[str, list[float]], colors: list[str], title: str, xlabel: str,
                ylabel: str, path: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 4.5), facecolor=SURFACE)
-    for (name, ys), c in zip(series.items(), colors):
+    ends = [ys[-1] for ys in series.values()]
+    span = max(max(max(ys) for ys in series.values()), 1e-9)
+    close = len(ends) == 2 and abs(ends[0] - ends[1]) < 0.06 * span  # nudge end labels apart
+    for i, ((name, ys), c) in enumerate(zip(series.items(), colors)):
         ax.plot(xs, ys, color=c, linewidth=2, marker="o", markersize=8,
                 markeredgecolor=SURFACE, markeredgewidth=2, label=name)
-        ax.annotate(name, (xs[-1], ys[-1]), xytext=(8, 0), textcoords="offset points",
+        dy = 0 if not close else (9 if ys[-1] >= min(ends) and i == ends.index(max(ends)) else -9)
+        ax.annotate(name, (xs[-1], ys[-1]), xytext=(8, dy), textcoords="offset points",
                     va="center", color=INK, fontsize=10)
     ax.set_xticks(xs)
     ax.set_xlabel(xlabel, color=INK2)

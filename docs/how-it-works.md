@@ -272,4 +272,26 @@ the GPU.
 
 ## Dashboard (Phase 5)
 
+**What it does.** `python -m baton.dashboard.app` serves http://127.0.0.1:8000:
+- **Live lab** (`/`): one card per slot showing who holds it, a status badge (Active / Idle: memory held,
+  0% compute / Warned with a live "parking in N s" countdown / Parking / Restoring / Free), memory
+  against the slot cap, compute %, and time since the last GPU work. There are also the queue
+  (returning owners tagged), parked sessions, "saved you a wait" receipts, an event log, and headline
+  counters (GPU-time reclaimed, parks, restores, lost sessions = 0). "Park now" / "Resume" buttons are
+  there for demo control.
+- **Results** (`/results`): the simulator's four-policy table (our row highlighted), its charts, the
+  live mini-lab numbers, the calibration table and the park/restore benchmark.
+
+**Why it's built this way.**
+- *It reads SQLite, not the daemon.* The daemon writes a status snapshot every tick, and the dashboard
+  reads it. A slow browser can never slow the daemon down, and the page still works (showing "daemon
+  offline") if the daemon is down. Only the two demo buttons talk to the daemon over TCP.
+- *Plain HTML + JS polling every second.* No build step and no framework. One second matches the
+  daemon's tick, so faster polling would show nothing new.
+- *Made for a projector.* Large type, high contrast, light by default with a dark mode. Colour is never
+  the only signal: every state has an icon and a word as well (a red slot also says "Idle: memory held,
+  0% compute"). Status colours follow the dataviz reference status palette.
+- *Preview without a GPU:* `python -m baton.dashboard.preview` stages a realistic snapshot
+  in `data/preview.db`, which is handy if the GPU misbehaves on stage.
+
 ## cuda-checkpoint parker and CLI (Phase 6)

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baton</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Baton</h1>
+  <nav><a href="/">Live lab</a><a href="/results">Results</a></nav>
+  <div class="spacer"></div>
+  <span id="gpu" class="muted"></span>
+  <span id="online" class="pill">connecting…</span>
+</header>
+<main>
+  <div class="grid kpis">
+    <div class="kpi"><div class="label">GPU-time reclaimed</div><div class="value" id="k-reclaimed">–</div><div class="sub">time parked sessions' slots were free for others</div></div>
+    <div class="kpi"><div class="label">Sessions parked</div><div class="value" id="k-parks">–</div><div class="sub" id="k-restores">–</div></div>
+    <div class="kpi"><div class="label">Waiting for a GPU</div><div class="value" id="k-queue">–</div><div class="sub">fair queue</div></div>
+    <div class="kpi"><div class="label">Lost sessions</div><div class="value" id="k-lost">0</div><div class="sub">parking keeps every tensor</div></div>
+  </div>
+  <div class="grid cols">
+    <div class="grid">
+      <section class="card"><h2>Slot map</h2><div class="slots" id="slots"></div></section>
+      <section class="card"><h2>Parked sessions <span class="muted">(GPU memory in host RAM, process still running)</span></h2><ul class="plain parked-list" id="parked"></ul></section>
+    </div>
+    <div class="grid">
+      <section class="card"><h2>Queue</h2><ul class="plain" id="queue"></ul></section>
+      <section class="card"><h2>"Saved you a wait" receipts</h2><div id="receipts"></div></section>
+      <section class="card"><h2>Event log</h2><ul class="plain events" id="events"></ul></section>
+    </div>
+  </div>
+</main>
+<script>
+const STATE = {
+  active:    {label: "Active",    color: "var(--good)",     icon: "▶"},
+  idle:      {label: "Idle: memory held, 0% compute", color: "var(--critical)", icon: "⏸"},
+  warned:    {label: "Warned",    color: "var(--critical)", icon: "⚠"},
+  parking:   {label: "Parking…",  color: "var(--warning)",  icon: "⇣"},
+  restoring: {label: "Restoring…",color: "var(--warning)",  icon: "⇡"},
+  free:      {label: "Free",      color: "var(--neutral)",  icon: "○"},
+};
+const EVENT_TEXT = {
+  register: "logged in", grant: "got a slot", queued: "queued", idle: "went idle", active: "computing again",
+  warn: "warned", warn_cancelled: "came back in time", park: "parking", parked: "parked",
+  owner_returned: "came back", restoring: "restoring", restored: "restored", receipt: "got a reclaimed slot",
+  gone: "left", would_warn: "would warn (dry run)", would_park: "would park (dry run)", park_now: "park requested",
+  cannot_park: "cannot park", park_failed: "park failed", park_timeout: "park timed out",
+};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const short = (u) => esc(String(u || "").replace(/^student-/, ""));
+function dur(s) {
+  if (s == null) return "–";
+  if (s < 60) return `${s.toFixed(0)} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
+  return `${(s / 3600).toFixed(1)} h`;
+}
+function slotCard(slot) {
+  const h = slot.holder;
+  const st = h ? (STATE[h.state] || STATE.active) : STATE.free;
+  const cls = h ? h.state : "free";
+  const capMib = slot.cap_gib * 1024;
+  let body = `<div class="who">${h ? short(h.name) : "—"}</div>
+    <span class="state"><span class="dot" style="background:${st.color}"></span>${st.icon} ${esc(st.label)}</span>`;
+  if (h) {
+    body += `<div class="metrics">
+      <div><span>GPU memory</span><b>${h.mem_mib} MiB</b><div class="bar"><i style="width:${Math.min(100, 100 * h.mem_mib / capMib)}%"></i></div></div>
+      <div><span>Compute</span><b>${h.util}%</b></div>
+      <div><span>No GPU work for</span><b>${h.idle_s == null ? "–" : dur(h.idle_s)}</b></div>
+    </div>`;
+    if (h.state === "warned") body += `<div class="countdown">Parking in ${Math.ceil(h.park_in_s)} s unless GPU work starts</div>`;
+  } else {
+    body += `<div class="metrics muted"><div><span>Capacity</span><b>${slot.cap_gib} GiB</b></div></div>`;
+  }
+  return `<div class="slot ${cls}"><div class="top"><span class="slotname">Slot ${slot.slot}</span>
+    ${h ? `<button onclick="act('park_now','${esc(h.sid)}')" title="Demo control">Park now</button>` : ""}</div>${body}</div>`;
+}
+async function act(kind, sid) {
+  try { await fetch(`/api/${kind}/${encodeURIComponent(sid)}`, {method: "POST"}); } catch (e) {}
+  refresh();
+}
+function render(d) {
+  $("online").textContent = d.online ? (d.dry_run ? "daemon online (DRY RUN)" : "daemon online") : "daemon offline";
+  $("online").className = "pill " + (d.online ? "online" : "offline");
+  if (!d.slots) return;
+  if (d.gpu) $("gpu").textContent = `GPU ${d.gpu.used_mib} / ${d.gpu.total_mib} MiB · ${d.gpu.util}% · ${d.gpu.temp_c} °C · parker: ${d.parker}`;
+  $("slots").innerHTML = d.slots.map(slotCard).join("");
+  const st = d.stats;
+  $("k-reclaimed").textContent = dur(st.reclaimed_gpu_s);
+  $("k-parks").textContent = st.parks;
+  $("k-restores").textContent = `${st.restores} restored with state intact`;
+  $("k-queue").textContent = d.queue.length;
+  $("queue").innerHTML = d.queue.length ? d.queue.map((q, i) =>
+    `<li><span><b>${i + 1}. ${short(q.user)}</b> ${q.returning ? '<span class="tag">returning owner</span>' : ""}</span><span class="muted">waiting ${dur(q.waiting_s)}</span></li>`).join("")
+    : `<li class="muted">Nobody waiting</li>`;
+  const parked = d.sessions.filter((s) => s.state === "parked");
+  $("parked").innerHTML = parked.length ? parked.map((s) =>
+    `<li><span><b>${short(s.name)}</b> <span class="muted">parked in ${s.last_park_s.toFixed(2)} s, ${dur(s.parked_s)} ago</span></span>
+     <button onclick="act('resume','${esc(s.sid)}')" title="Demo control">Resume</button></li>`).join("")
+    : `<li class="muted">No parked sessions</li>`;
+  $("receipts").innerHTML = st.receipts.length ? st.receipts.slice().reverse().map((r) =>
+    `<div class="receipt"><b>${short(r.beneficiary)}</b> got the GPU ${short(r.owner)} left idle.
+     Without parking, ${short(r.beneficiary)} would have waited at least <b>${dur(r.saved_s)}</b> more${r.open ? " (and counting)" : ""}.</div>`).join("")
+    : `<p class="muted">Appear when a parked session's slot goes to someone in the queue.</p>`;
+  $("events").innerHTML = d.events.slice().reverse().filter((e) => EVENT_TEXT[e.kind]).map((e) => {
+    const t = new Date(e.ts * 1000).toLocaleTimeString();
+    const det = e.detail || {};
+    let extra = "";
+    if (e.kind === "parked") extra = `${det.gib} GiB in ${det.park_s.toFixed(2)} s`;
+    if (e.kind === "restored") extra = `in ${det.restore_s.toFixed(2)} s after waiting ${det.waited_s.toFixed(1)} s`;
+    if (e.kind === "grant" && det.waited_s > 0.5) extra = `after waiting ${det.waited_s.toFixed(1)} s`;
+    if (e.kind === "warn") extra = `parking in ${det.park_in_s} s`;
+    return `<li><time>${t}</time><span class="k">${short(e.user)}</span><span>${EVENT_TEXT[e.kind]} <span class="muted">${extra}</span></span></li>`;
+  }).join("");
+}
+async function refresh() {
+  try { render(await (await fetch("/api/status")).json()); }
+  catch (e) { $("online").textContent = "dashboard offline"; $("online").className = "pill offline"; }
+}
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

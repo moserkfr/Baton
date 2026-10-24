@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baton Results</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Baton</h1>
+  <nav><a href="/">Live lab</a><a href="/results">Results</a></nav>
+</header>
+<main>
+  <div class="grid kpis" id="kpis"></div>
+  <section class="card"><h2 id="sim-title">Simulated lab: four policies, same workload</h2>
+    <p class="muted" id="sim-desc"></p>
+    <div class="tablewrap"><table id="main"></table></div>
+  </section>
+  <div class="grid charts" style="margin-top:20px">
+    <img src="/files/idle_gpu_hours.png" alt="Bar chart: GPU-hours held while idle per policy">
+    <img src="/files/wait_times.png" alt="Bar charts: median and 95th-percentile wait per policy">
+    <img src="/files/sweep_idle_window.png" alt="Line chart: GPU-hours reclaimed vs idle window">
+    <img src="/files/sweep_load.png" alt="Line chart: 95th-percentile wait as demand grows">
+  </div>
+  <div class="grid cols" style="margin-top:20px">
+    <section class="card"><h2>Live mini-lab on this laptop (RTX 3050, 2 slots)</h2><div class="tablewrap"><table id="scenario"></table></div></section>
+    <section class="card"><h2>Workload calibration vs NotebookOS</h2><div class="tablewrap"><table id="calib"></table></div></section>
+  </div>
+  <section class="card" style="margin-top:20px"><h2>Park / restore benchmark</h2><div class="tablewrap" id="bench"></div></section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+function mdTable(md) {
+  const rows = md.split("\n").filter((l) => l.startsWith("|") && !/^\|\s*-/.test(l));
+  if (!rows.length) return "";
+  const cells = (l) => l.split("|").slice(1, -1).map((c) => esc(c.trim()));
+  return `<table><tr>${cells(rows[0]).map((c) => `<th>${c}</th>`).join("")}</tr>` +
+    rows.slice(1).map((r) => `<tr>${cells(r).map((c) => `<td>${c}</td>`).join("")}</tr>`).join("") + "</table>";
+}
+fetch("/api/results").then((r) => r.json()).then((d) => {
+  const wp = d.workload_params;
+  $("sim-desc").textContent = `${wp.students} students, 8 GPUs, ${wp.days} working days, ` +
+    `${wp.sessions_per_student_day} notebook sessions per student per day + Helios batch jobs. Mean of ${d.seeds.length} seeds.`;
+  const names = Object.keys(d.main);
+  const m = (n, k) => mean(d.main[n][k]);
+  $("main").innerHTML = `<tr><th>Policy</th><th class="num">Idle GPU-h held</th><th class="num">GPU-h reclaimed</th>
+    <th class="num">Median wait</th><th class="num">p95 wait</th><th class="num">Sessions with lost state</th></tr>` +
+    names.map((n) => `<tr class="${n.includes("ours") ? "ours" : ""}"><td>${esc(n)}</td>
+      <td class="num">${m(n, "idle_gpu_hours_held").toFixed(0)}</td><td class="num">${m(n, "gpu_hours_reclaimed").toFixed(0)}</td>
+      <td class="num">${m(n, "wait_median_min").toFixed(1)} min</td><td class="num">${m(n, "wait_p95_min").toFixed(0)} min</td>
+      <td class="num">${m(n, "sessions_state_lost").toFixed(0)} of ${m(n, "sessions").toFixed(0)}</td></tr>`).join("");
+  const hold = names[0], ours = names.find((n) => n.includes("ours"));
+  const kpi = (label, value, sub) => `<div class="kpi"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+  let k = kpi("Idle GPU-hours per week", `${m(hold, "idle_gpu_hours_held").toFixed(0)} → ${m(ours, "idle_gpu_hours_held").toFixed(0)}`, "hold-until-logout → park & restore") +
+    kpi("p95 wait for a GPU", `${m(hold, "wait_p95_min").toFixed(0)} → ${m(ours, "wait_p95_min").toFixed(0)} min`, "hold-until-logout → park & restore") +
+    kpi("Sessions with lost state", `${m(ours, "sessions_state_lost").toFixed(0)}`, `vs ${m(names[1], "sessions_state_lost").toFixed(0)} for the activity culler`);
+  const s = d.scenario;
+  if (s) k += kpi("Live park / restore", `${s.b_park_s.toFixed(2)} / ${s.b_restore_s.toFixed(2)} s`, `checksum match: ${s.checksum_match ? "yes" : "NO"}`);
+  $("kpis").innerHTML = k;
+  if (s) {
+    const rows = [["B parked (GPU → host RAM)", `${s.b_park_s.toFixed(2)} s`], ["B restored", `${s.b_restore_s.toFixed(2)} s`],
+      ["VRAM, A and B running → B parked", `${s.vram_both_running_mib.toFixed(0)} → ${s.vram_after_park_mib.toFixed(0)} MiB`],
+      ["C waited for a slot", `${s.c_waited_s.toFixed(1)} s`], ["Checksum before / parked / after", `${s.checksum_match ? "identical" : "MISMATCH"} (${esc(s.b_checksum_before)})`],
+      ["Returning owner served before D", s.returning_priority_worked ? "yes" : "no"],
+      ["VRAM back to baseline at the end", s.vram_back_to_baseline ? `yes (${s.vram_end_mib.toFixed(0)} MiB)` : "no"]];
+    $("scenario").innerHTML = rows.map(([a, b]) => `<tr><td>${a}</td><td class="num"><b>${b}</b></td></tr>`).join("");
+  }
+  $("calib").innerHTML = `<tr><th>Statistic</th><th>Published</th><th class="num">Generated</th></tr>` +
+    d.calibration.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.target)}</td><td class="num">${c.achieved.toFixed(1)} ${esc(c.unit)}</td></tr>`).join("");
+  $("bench").innerHTML = mdTable(d.park_bench_md);
+}).catch(() => { $("sim-desc").textContent = "No results yet: run python -m baton.simulator.report"; });
+</script>
+</body>
+</html>
