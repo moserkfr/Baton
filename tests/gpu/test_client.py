@@ -37,7 +37,10 @@ class FakeDaemon:
         protocol.send(self.f, {"type": "registered", "session": "s1", "state": state,
                                "slot": None if self.start_queued else 0, "cap_fraction": 0.367})
         while True:
-            msg = protocol.recv(self.f)
+            try:
+                msg = protocol.recv(self.f)
+            except OSError:  # kill() shut the socket down under us
+                return
             if msg is None:
                 return
             self.inbox.put(msg)

@@ -15,6 +15,7 @@ policy:
   idle_window_s: 30          # holds memory + utilization below threshold this long -> Idle
   grace_period_s: 10         # time between the warning and the park
   util_threshold_pct: 5      # compute % at or below this counts as "no compute"
+  idle_display_s: 3          # seconds without compute before the dashboard shows "idle"
   min_memory_mib: 64         # a session holding less than this is not worth parking
   never_park_above_pct: 30   # safety rule: never park while recent utilization is above this
   whitelist_users: []        # users whose sessions are never parked (long training runs)

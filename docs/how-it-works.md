@@ -167,6 +167,63 @@ lets the subprocess-based `cuda-checkpoint` parker plug in unchanged.
 
 ## Daemon (Phase 3)
 
+**What it does.** One process per GPU machine (`python -m baton.daemon.server`). Every second
+it samples the GPU, decides for each session whether it is active, idle, should be warned, or should be
+parked, and hands free slots to the queue. Code: `baton/daemon/`.
+
+| File | Job |
+| --- | --- |
+| `monitor.py` | NVML: compute % per process + device totals (a `FakeMonitor` for tests) |
+| `policy.py` | Pure rules: the 7 states and when to move between them, plus the safety rules |
+| `slots.py` | Virtual slots and the per-slot memory fraction |
+| `queue.py` | Fair-share queue with returning-owner priority |
+| `core.py` | The `Daemon` object: sessions, lifecycle, receipts, status. All logic, no sockets |
+| `server.py` | TCP server and the 1-second tick, wired to `core.Daemon` |
+| `state.py` | SQLite: event log, session history, latest status snapshot (read by the dashboard) |
+
+**The lifecycle.** `queued -> active <-> idle -> warned -> parking -> parked -> restoring -> active`.
+- *Active* means computing: NVML utilization above 5%, **or** the client finished a step since the last
+  poll. The second signal is a safety net: a training loop stuck on CPU data loading reads 0% on NVML
+  but keeps finishing steps, and must not be mistaken for an abandoned notebook.
+- *Idle* after 3 s without compute (shown red on the dashboard). *Warned* after the full idle window:
+  the student's terminal prints a warning, and they have the grace period to run something.
+- *Park:* the daemon asks the parker. The cooperative parker sends `park`; when the client answers
+  `parked`, the slot is released and the queue is served immediately.
+- *Owner returns:* calling `gq.step()` sends `request`. If a slot is free, the owner gets it at once;
+  otherwise they go into the queue with priority for 2 minutes.
+
+**Safety rules** (all in `policy.py` and `core.py`): never park a whitelisted user (config or the
+client's own `whitelist=True`); don't bother parking sessions holding under 64 MiB; never park if
+utilization is above 30% at the moment of parking; a park that isn't acknowledged within 20 s is
+abandoned and the session stays active; a client silent for 15 s is treated as gone and its slot freed;
+**dry-run mode** logs `would_warn` / `would_park` and never sends anything. That's how you'd pilot this
+on a real lab server for a week.
+
+**Why it's built this way.**
+- *One lock, plain method calls.* Many threads (one per connection plus the tick), but each takes the
+  daemon's single lock, so the logic runs one step at a time. That's simple to reason about, and fast
+  enough for a few dozen sessions.
+- *Logic separate from sockets.* `core.Daemon` takes an injectable clock, monitor and parker, so
+  `tests/test_daemon.py` plays the entire demo storyline with fake time in 0.2 s.
+- *New sessions don't jump the queue.* A freshly registered student gets a free slot only if nobody
+  is waiting.
+- *Fair queue.* Score = seconds waited − 600 s × recent GPU-hours (24 h half-life). A returning owner
+  gets +∞ for 2 minutes, then competes normally, so they can't block the queue forever.
+- *Verified PID mapping.* On this laptop, NVML reported utilization under the PID the student
+  self-reported (`os.getpid()`), not the launcher PID that `Popen` returned. That's exactly why the client
+  self-reports it.
+
+**"Saved you a wait" receipts (the stand-out feature).** When a slot freed by parking B goes to C, the
+daemon writes a receipt: C got a GPU, and *without parking* C would have waited at least until B came back.
+That time is the receipt's `saved_s` (a lower bound, since B might have held the GPU even longer). The
+dashboard shows these live, plus "GPU-time reclaimed": the total time parked sessions' slots were free
+for others.
+
+**Limits.** Under WDDM, NVML has no per-process memory, so the daemon trusts each client's report. A
+process that never imports the client can't be attributed or parked (the `cuda-checkpoint` parker
+fixes the parking half on Linux). Slots are virtual on one GPU, so two slots share compute
+(time-slicing): fine for notebooks, not for two heavy trainers at once.
+
 ## Mini-lab and demo scenario (Phase 4)
 
 ## Dashboard (Phase 5)
