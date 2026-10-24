@@ -28,7 +28,11 @@ class Handle:
         self.sent.append(msg)
 
     def kinds(self):
-        return [m["type"] for m in self.sent]
+        """Protocol messages, without the human-facing notifications."""
+        return [m["type"] for m in self.sent if m["type"] != "notify"]
+
+    def notes(self):
+        return [m["kind"] for m in self.sent if m["type"] == "notify"]
 
 
 def make(**over):

@@ -19,6 +19,12 @@ policy:
   min_memory_mib: 64         # a session holding less than this is not worth parking
   never_park_above_pct: 30   # safety rule: never park while recent utilization is above this
   whitelist_users: []        # users whose sessions are never parked (long training runs)
+  snooze_s: 60               # "I'm thinking, not idle": postpones the warning this long (real lab: 900)
+  snoozes_per_day: 3         # per user, so snoozing can't hold a GPU all day
+  away_prewarm_s: 10         # "back at 3pm": restore this long before the announced return (real lab: 60)
+  # Deadline mode: stricter windows on chosen days. Dates are local; a date-only end includes that day.
+  #   - {name: "A2 deadline week", start: 2026-11-02, end: 2026-11-06, idle_window_s: 600, grace_period_s: 120}
+  schedules: []
 
 slots:
   count: 2                   # virtual slots on this GPU (real GPUs on a lab server)
@@ -28,10 +34,20 @@ queue:
   usage_halflife_h: 24       # recent GPU-hours decay with this half-life
   usage_weight_s_per_gpuh: 600   # each recent GPU-hour costs this many seconds of "wait credit"
   returning_priority_s: 120  # a parked owner who returns gets priority for this long
+  eta_active_guess_s: 600    # queue ETA: assumed time an actively computing holder keeps going
 
 parker:
   kind: cooperative          # cooperative | cuda_checkpoint (Linux only, driver 570+)
   park_timeout_s: 20         # give up on a park that takes longer than this
+  spill_after_s: 120         # parked this long -> write the state to disk and free the RAM too (real lab: 3600; 0 = never)
+  spill_dir: data/spill      # where spilled sessions are written (deleted again on restore)
+
+notify:
+  inbox: true                # keep notifications in SQLite (dashboard inbox, /api/notifications)
+  kinds: [warn, parked, ready, restored, next, spilled]
+  # Push to phones/chat. Empty `users` = everyone. kind: discord | slack | ntfy | generic (JSON POST)
+  #   - {kind: ntfy, url: "https://ntfy.sh/my-lab-topic", users: []}
+  webhooks: []
 
 dashboard:
   host: 127.0.0.1

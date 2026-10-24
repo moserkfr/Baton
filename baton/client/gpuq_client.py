@@ -20,20 +20,28 @@ What happens behind the scenes:
 * The PID sent on registration is `os.getpid()`: on Windows a venv's python.exe is a launcher, so the PID
   a parent gets from Popen belongs to the launcher, not to the process that owns the GPU memory.
 * If the daemon disappears, the client fails open: steps keep running, nothing is parked.
+
+Friendlier extras: `gq.autotrack()` finds models/optimizers/GPU tensors by itself (the Jupyter extension
+does this after every cell), `gq.snooze()` postpones a warning, `gq.away(minutes=45)` parks now and
+restores just before you're back, and long-parked sessions are spilled to disk when the daemon asks.
 """
 from __future__ import annotations
 
+import inspect
 import os
+import re
 import socket
 import sys
 import threading
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Callable, Iterator
 
 import torch
 
 from .. import protocol
+from .autotrack import discover
 from .tensor_parking import TensorParker
 
 DEFAULT_HOST, DEFAULT_PORT = "127.0.0.1", 7311
@@ -64,6 +72,8 @@ class GpuqClient:
         self._stop = threading.Event()
         self._sock: socket.socket | None = None
         self._f = None
+        self._auto_n = 0
+        self.notifications: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------ connection
     def connect(self, timeout: float | None = None) -> "GpuqClient":
@@ -90,6 +100,7 @@ class GpuqClient:
 
     def close(self) -> None:
         self._stop.set()
+        self.parker.discard_spill()
         try:
             self._send({"type": "bye"})
         except OSError:
@@ -117,24 +128,67 @@ class GpuqClient:
             return self.parker.track_tensor(obj, name)
         raise TypeError(f"cannot track {type(obj).__name__}")
 
-    @contextmanager
-    def step(self) -> Iterator[None]:
-        """Wrap each unit of GPU work. Blocks (and asks for a slot) if the session is parked."""
+    def autotrack(self, namespace: dict[str, Any] | None = None) -> list[str]:
+        """Track every model, optimizer and GPU tensor in `namespace` (default: the caller's globals).
+
+        Found objects are held weakly, so deleting a variable still frees its memory. Returns the names
+        of newly tracked objects.
+        """
+        if namespace is None:
+            frame = inspect.currentframe()
+            namespace = frame.f_back.f_globals if frame and frame.f_back else {}
+        added = []
+        for kind, name, obj in discover(namespace):
+            if self.parker.is_tracked(obj):
+                continue
+            self._auto_n += 1
+            tname = f"auto{self._auto_n}.{name}"   # unique: a re-run cell may rebind the same variable
+            if kind == "module":
+                self.parker.track_module(obj, tname, weak=True)
+            elif kind == "optimizer":
+                self.parker.track_optimizer(obj, tname, weak=True)
+            else:
+                self.parker.track_tensor(obj, tname, weak=True)
+            added.append(name)
+        return added
+
+    def begin_step(self) -> None:
+        """Start a unit of GPU work (blocks and asks for a slot if parked). Pair with end_step()."""
         self._gpu_lock.acquire()
         while self.parker.parked and self.state != "disconnected":
             self._gpu_lock.release()
             self._wait_for_resume()
             self._gpu_lock.acquire()
         self.in_step = True
+
+    def end_step(self, sync: bool = True) -> None:
         try:
-            yield
-            if torch.cuda.is_available():
+            if sync and torch.cuda.is_available():
                 torch.cuda.synchronize()  # the step's GPU work is finished before we leave the lock
         finally:
             self.in_step = False
             self.steps += 1
             self.last_step = time.time()
             self._gpu_lock.release()
+
+    @contextmanager
+    def step(self) -> Iterator[None]:
+        """Wrap each unit of GPU work. Blocks (and asks for a slot) if the session is parked."""
+        self.begin_step()
+        ok = False
+        try:
+            yield
+            ok = True
+        finally:
+            self.end_step(sync=ok)
+
+    def snooze(self) -> None:
+        """'I'm thinking, not idle': postpone the idle warning (a few times a day)."""
+        self._send({"type": "snooze"})
+
+    def away(self, minutes: float | None = None, until: float | None = None) -> None:
+        """Park now and have the session restored just before you're back (`until` = epoch seconds)."""
+        self._send({"type": "away", "minutes": minutes, "until": until})
 
     def checksum(self) -> str:
         with self._gpu_lock:
@@ -179,11 +233,26 @@ class GpuqClient:
             self._on_grant(msg)
         elif kind == "warn":
             self._say(f"WARNING: no GPU work for {msg.get('idle_s', 0):.0f} s; "
-                      f"parking in {msg.get('park_in_s', 0):.0f} s unless you run something")
+                      f"parking in {msg.get('park_in_s', 0):.0f} s unless you run something "
+                      f"(or gq.snooze(), {msg.get('snoozes_left', 0)} left today)")
         elif kind == "park":
             threading.Thread(target=self._do_park, name="gpuq-park", daemon=True).start()
         elif kind == "resume":
             threading.Thread(target=self._do_resume, args=(msg,), name="gpuq-resume", daemon=True).start()
+        elif kind == "spill":
+            threading.Thread(target=self._do_spill, args=(msg,), name="gpuq-spill", daemon=True).start()
+        elif kind == "notify":
+            self.notifications.append(msg)
+            del self.notifications[:-50]
+            if msg.get("kind") == "next":   # the other kinds are already printed by their own messages
+                self._say(f"{msg.get('title')}. {msg.get('body')}")
+        elif kind == "snooze_ok":
+            self._say(f"snoozed for {msg.get('snooze_s', 0):.0f} s ({msg.get('snoozes_left', 0)} left today)")
+        elif kind == "away_ok":
+            self._say("parking now; will be restored just before " + time.strftime(
+                "%H:%M", time.localtime(msg.get("back_at") or time.time())))
+        elif kind == "error":
+            self._say(f"daemon says: {msg.get('error')}")
 
     def _on_grant(self, msg: dict[str, Any]) -> None:
         self.slot = msg.get("slot")
@@ -231,6 +300,21 @@ class GpuqClient:
         self._resume_requested = False
         self._resumed.set()
 
+    def _do_spill(self, msg: dict[str, Any]) -> None:
+        with self._gpu_lock:
+            if not self.parker.parked or self.parker.spill_path is not None:
+                return
+            safe_user = re.sub(r"[^A-Za-z0-9_.-]", "_", self.user)
+            path = Path(msg["dir"]) / f"{safe_user}-{self.session}-{os.getpid()}.pt"
+            try:
+                stats = self.parker.spill(path)
+            except Exception as e:
+                self._send({"type": "spill_failed", "error": repr(e)})
+                return
+        self._say(f"parked a long time: {stats.bytes_moved / 2**30:.2f} GiB moved from RAM to disk "
+                  f"in {stats.seconds:.2f} s")
+        self._send({"type": "spilled", "seconds": stats.seconds, "bytes": stats.bytes_moved})
+
     def _reporter(self) -> None:
         while not self._stop.wait(self.report_interval):
             if self.state == "disconnected":
@@ -245,7 +329,8 @@ class GpuqClient:
         return {"type": "report", "state": self.state, "steps": self.steps, "in_step": self.in_step,
                 "last_step_ago_s": time.time() - self.last_step,
                 "mem_reserved": torch.cuda.memory_reserved() if cuda else 0,
-                "mem_allocated": torch.cuda.memory_allocated() if cuda else 0}
+                "mem_allocated": torch.cuda.memory_allocated() if cuda else 0,
+                "peak_allocated": torch.cuda.max_memory_allocated() if cuda else 0}
 
     # ------------------------------------------------------------ helpers
     def _send(self, msg: dict[str, Any]) -> None:

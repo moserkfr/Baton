@@ -22,3 +22,7 @@ class CooperativeParker(Parker):
     def resume(self, session: SessionHandle, slot: int, cap_fraction: float) -> ParkResult | None:
         session.send({"type": "resume", "slot": slot, "cap_fraction": cap_fraction})
         return None  # the client answers with `resumed`
+
+    def spill(self, session: SessionHandle, directory: str) -> ParkResult | None:
+        session.send({"type": "spill", "dir": directory})
+        return None  # the client answers with `spilled` (or `spill_failed`)

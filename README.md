@@ -71,6 +71,25 @@ Preview the dashboard without a GPU:
 `python -m baton.dashboard.preview` (writes `data/preview.db`), then
 `python -m baton.dashboard.app --db data/preview.db`.
 
+## Friendly features
+
+| Feature | How to use it |
+| --- | --- |
+| Jupyter with no code changes | `%load_ext baton.jupyter` in the first cell; `%gpuq`, `%gpuq snooze`, `%gpuq away 45` |
+| Back at 3pm (park now, restore just before you return) | `gq.away(minutes=45)`, `gpuq away B 15:00`, `POST /api/away/{session}` |
+| Snooze a warning (3 a day) | `gq.snooze()`, `gpuq snooze B`, Snooze button on the dashboard |
+| Notifications (phone, Discord, Slack) | `notify.webhooks` in config.yaml; in-app inbox always on |
+| Queue ETA | shown in `gpuq status`, the dashboard queue, and `status.queue[].eta_s` |
+| Why was I parked? | `gpuq why s3`, `GET /api/sessions/{sid}/timeline` |
+| Memory right-sizing tips | `gpuq status` (TIPS), `session.tip` in the API |
+| Spill to disk after long parks | `parker.spill_after_s` in config.yaml |
+| Deadline mode | `policy.schedules` in config.yaml, or `gpuq mode exam --idle 600 --grace 120` / `gpuq mode off` |
+| Impact stats and leaderboard | `gpuq stats`, `GET /api/users/{user}`, `GET /api/leaderboard` |
+| Dry-run report for lab admins | run the daemon with `--dry-run`, then `gpuq dryrun-report` |
+| Live dashboard updates | `GET /api/stream` (server-sent events) |
+
+Building a frontend? Everything is documented in [API.md](API.md), and FastAPI serves interactive docs at `/docs`.
+
 ## Using it from your own code
 
 ```python
@@ -86,7 +105,7 @@ for batch in loader:
 ## Tests
 
 ```powershell
-.venv\Scripts\python -m pytest tests -q            # 50 tests; tests/gpu needs the GPU (~20 s)
+.venv\Scripts\python -m pytest tests -q            # 74 tests; tests/gpu needs the GPU (~30 s)
 ```
 
 ## Configuration
@@ -107,9 +126,11 @@ overridden on the daemon's command line: `--set policy.idle_window_s=1800`.
 
 ```
 baton/
-  daemon/      monitor.py (NVML), policy.py, slots.py, queue.py, core.py, server.py (TCP), state.py (SQLite)
+  daemon/      monitor.py (NVML), policy.py, slots.py, queue.py, core.py, server.py (TCP), state.py (SQLite),
+               eta.py, notify.py, tips.py, schedule.py, explain.py, stats.py, dryrun.py
   parkers/     base.py (interface), cooperative.py, cuda_checkpoint.py (Linux-only stub)
-  client/      gpuq_client.py (students import this), tensor_parking.py, bench_parking.py
+  client/      gpuq_client.py (students import this), tensor_parking.py, autotrack.py, bench_parking.py
+  jupyter.py   %load_ext baton.jupyter
   minilab/     students.py (A-D), launcher.py, scenario.py
   simulator/   workload.py, policies.py, sim.py, report.py
   dashboard/   app.py, preview.py, static/

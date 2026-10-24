@@ -48,6 +48,8 @@ const EVENT_TEXT = {
   owner_returned: "came back", restoring: "restoring", restored: "restored", receipt: "got a reclaimed slot",
   gone: "left", would_warn: "would warn (dry run)", would_park: "would park (dry run)", park_now: "park requested",
   cannot_park: "cannot park", park_failed: "park failed", park_timeout: "park timed out",
+  snoozed: "snoozed", away: "stepped away", prewarm: "restoring before return", spilled: "moved to disk",
+  would_restore: "would restore (dry run)", mode: "policy mode changed",
 };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
@@ -71,7 +73,10 @@ function slotCard(slot) {
       <div><span>Compute</span><b>${h.util}%</b></div>
       <div><span>No GPU work for</span><b>${h.idle_s == null ? "–" : dur(h.idle_s)}</b></div>
     </div>`;
-    if (h.state === "warned") body += `<div class="countdown">Parking in ${Math.ceil(h.park_in_s)} s unless GPU work starts</div>`;
+    if (h.state === "warned") body += `<div class="countdown">Parking in ${Math.ceil(h.park_in_s)} s unless GPU work starts
+      <button onclick="act('snooze','${esc(h.sid)}')">Snooze (${h.snoozes_left} left)</button></div>`;
+    if (h.snoozed_for_s) body += `<div class="muted">Snoozed, ${dur(h.snoozed_for_s)} left</div>`;
+    if (h.tip) body += `<div class="muted">Tip: ${esc(h.tip.text)}</div>`;
   } else {
     body += `<div class="metrics muted"><div><span>Capacity</span><b>${slot.cap_gib} GiB</b></div></div>`;
   }
@@ -94,11 +99,11 @@ function render(d) {
   $("k-restores").textContent = `${st.restores} restored with state intact`;
   $("k-queue").textContent = d.queue.length;
   $("queue").innerHTML = d.queue.length ? d.queue.map((q, i) =>
-    `<li><span><b>${i + 1}. ${short(q.user)}</b> ${q.returning ? '<span class="tag">returning owner</span>' : ""}</span><span class="muted">waiting ${dur(q.waiting_s)}</span></li>`).join("")
+    `<li><span><b>${i + 1}. ${short(q.user)}</b> ${q.returning ? '<span class="tag">returning owner</span>' : ""}</span><span class="muted">waiting ${dur(q.waiting_s)}${q.eta_s == null ? "" : ` · ETA ${q.eta_basis === "guess" ? "~" : ""}${dur(q.eta_s)}`}</span></li>`).join("")
     : `<li class="muted">Nobody waiting</li>`;
   const parked = d.sessions.filter((s) => s.state === "parked");
   $("parked").innerHTML = parked.length ? parked.map((s) =>
-    `<li><span><b>${short(s.name)}</b> <span class="muted">parked in ${s.last_park_s.toFixed(2)} s, ${dur(s.parked_s)} ago</span></span>
+    `<li><span><b>${short(s.name)}</b> <span class="muted">parked in ${s.last_park_s.toFixed(2)} s, ${dur(s.parked_s)} ago${s.on_disk ? " · on disk" : ""}${s.back_at ? ` · back at ${new Date(s.back_at * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}` : ""}</span></span>
      <button onclick="act('resume','${esc(s.sid)}')" title="Demo control">Resume</button></li>`).join("")
     : `<li class="muted">No parked sessions</li>`;
   $("receipts").innerHTML = st.receipts.length ? st.receipts.slice().reverse().map((r) =>

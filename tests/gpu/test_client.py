@@ -80,6 +80,10 @@ def test_register_queue_then_grant_reports_pid_and_memory():
     assert c.state == "running" and c.slot == 1
     x = c.track(torch.ones(2**20, device="cuda"))
     rep = d.expect("report")
+    for _ in range(10):   # a report already in flight may predate the allocation
+        if rep["mem_reserved"] >= x.numel() * 4:
+            break
+        rep = d.expect("report")
     assert rep["mem_reserved"] >= x.numel() * 4
     c.close()
     del x

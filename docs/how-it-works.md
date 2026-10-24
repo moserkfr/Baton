@@ -323,6 +323,62 @@ JSON-lines channel and never imports torch, so it starts instantly:
   doesn't drop it.
 - `park-now B` / `resume B`: manual control for the demo (session id, user or name).
 
+## Friendly features (after the MVP)
+
+The MVP proved the mechanism. These features make it something students *want* on their lab server: the
+tool explains itself, warns you, lets you push back a little, and never makes you wait without telling
+you how long. All of them are tested with fake time (`tests/test_features.py`); spill and Jupyter also on
+the GPU (`tests/gpu/test_features_gpu.py`). Full API for the frontend: `API.md`.
+
+| Feature | One-line pitch | Where |
+| --- | --- | --- |
+| **Back at 3pm** | Say you're leaving: parked now, restored a minute before you return | `Daemon.away`, `gq.away(45)`, `gpuq away B 15:00` |
+| **Notifications** | "Parking in 5 min", "Your GPU is ready", "You're next" on your phone or in chat | `daemon/notify.py` |
+| **Snooze** | "I'm thinking, not idle": one click, 15 more minutes, 3 a day | `Daemon.snooze` |
+| **Queue ETA** | "2nd in line, about 6 min" | `daemon/eta.py` |
+| **Jupyter, zero code changes** | `%load_ext baton.jupyter` and nothing else | `baton/jupyter.py`, `client/autotrack.py` |
+| **Why was I parked?** | Every decision, in plain English, per session | `daemon/explain.py`, `/api/sessions/{sid}/timeline`, `gpuq why s3` |
+| **Right-sizing tip** | "You used 0.6 of your 2.2 GiB; ask for 0.75 and get a slot sooner" | `daemon/tips.py` |
+| **Spill to disk** | Parked overnight? Moved to disk so RAM is free too | `TensorParker.spill`, `parker.spill_after_s` |
+| **Deadline mode** | Shorter idle window the week an assignment is due | `daemon/schedule.py`, `gpuq mode` |
+| **Impact stats** | "You gave back 12 GPU-hours this week and saved others 3 h of waiting" | `daemon/stats.py`, `gpuq stats` |
+| **Dry-run report** | Run a week observe-only, then show the admin what *their* lab would reclaim | `daemon/dryrun.py`, `gpuq dryrun-report` |
+| **Live stream** | Dashboard updates are pushed, not polled | `/api/stream` (server-sent events) |
+
+How the less obvious ones work, and what to say if asked:
+
+- **Snooze** moves the warning, it doesn't reset the clock: if you're still idle when the snooze ends, the
+  warning comes then, followed by the usual grace period. Three per user per day, so nobody can snooze all
+  day. A warned session goes back to idle the moment you snooze.
+- **Away** is just a park with a timer. Shortly before the return time (`away_prewarm_s`), the daemon acts as
+  if you came back: you get the returning-owner priority and are restored. If you don't show up, the normal
+  idle policy parks you again. Resuming by hand cancels the timer.
+- **Queue ETA**: each busy slot gets "free in" from its state. Warned: the rest of the grace period. Idle: the
+  rest of the idle window plus the grace period. Actively computing: unknown, so a configured guess, shown
+  with a "~". Queue position *i* gets the *i*-th earliest slot. It's a cautious estimate: sessions
+  ending on their own only make the wait shorter.
+- **Notifications** go three places: the student's own process (the helper prints it), the SQLite inbox (the
+  dashboard can show it or stream it), and optional webhooks from `config.yaml`. ntfy gives phone push
+  notifications with no account. Webhooks are off by default, so nothing leaves the machine unless an admin
+  sets them up.
+- **Jupyter** treats every cell as one step. Before a cell it waits for any park to finish, or asks for the
+  GPU back and restores. After a cell it scans the notebook's variables for models, optimizers and GPU
+  tensors, so the student never calls `track()`. The objects are held through weak references, so `del x`
+  still frees memory. A cell is never parked halfway: the park waits for the cell to end. *Found in testing:*
+  a kept result like `out = model(x)` holds its autograd graph, and the graph holds GPU inputs, so parking
+  freed less than expected. Parking now detaches tracked results from their graphs. The trade-off: no
+  `.backward()` on a result computed before the park, which nobody does after 30 idle minutes.
+- **Spill to disk**: after `spill_after_s` parked, the parked tensors are saved to a file and each tensor is
+  pointed at a one-element placeholder stretched to its shape. Shapes stay the same, and RAM use drops to
+  almost nothing. Restore reads the file straight back to the GPU and deletes it. Measured in the GPU test:
+  bit-identical training before and after a park, spill and restore.
+- **Dry-run report**: in dry run, a session that *would* have been parked is tracked as a "virtual park"
+  until it computes again, and `would_restore` records how long the GPU could have gone to someone else. The
+  daemon also counts queue waiting those slots could have served. This is the number that convinces an admin
+  to switch parking on.
+- **Impact stats** add up finished sessions (one row each in SQLite), receipts (`receipt_closed` events carry
+  "saved at least N s"), waits and snoozes. The leaderboard ranks by GPU time given back.
+
 ## Where the numbers come from (cheat sheet)
 
 | Claim | Evidence |
@@ -332,3 +388,6 @@ JSON-lines channel and never imports torch, so it starts instantly:
 | Park 0.26-0.42 s, restore 0.08-0.25 s for 0.5-2 GiB | `results/park_bench.md` (measured on the laptop) |
 | Live demo works: park, queue, restore, identical checksum | `results/scenario_results.md` (two runs, plus logs) |
 | Training continues bit-identically after a park | `tests/gpu/test_tensor_parking.py` |
+| ...and after a park, spill to disk and restore | `tests/gpu/test_features_gpu.py` |
+| Notebook parked between cells and restored on the next cell, no code changes | `tests/gpu/test_features_gpu.py` |
+| New features didn't break the demo | `results/scenario_run3.log` / `.json` (park 0.36 s, restore 0.06 s, checksum match) |

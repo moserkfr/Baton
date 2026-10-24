@@ -54,6 +54,10 @@ class Parker(ABC):
     def resume(self, session: SessionHandle, slot: int, cap_fraction: float) -> ParkResult | None:
         """Give the session its GPU memory back on `slot`. None = in progress."""
 
+    def spill(self, session: SessionHandle, directory: str) -> ParkResult | None:
+        """Move an already parked session's state from RAM to disk. None = in progress."""
+        return ParkResult(False, error=f"{self.name} parker cannot spill to disk")
+
 
 def make_parker(kind: str) -> Parker:
     """Build the parker named in config.yaml (`parker.kind`)."""

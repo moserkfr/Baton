@@ -1,0 +1,62 @@
+{
+ "run": 3,
+ "idle_window_s": 30.0,
+ "grace_s": 10.0,
+ "started": "2026-10-24 09:16:53",
+ "vram_baseline_mib": 307.65625,
+ "b_checksum_before": "406fd81b48e87b2f",
+ "b_loss_before_park": 8.78715705871582,
+ "vram_both_running_mib": 2204.7109375,
+ "b_mem_reserved_mib": 1152,
+ "b_warned_after_idle_s": 30.83188271522522,
+ "vram_after_park_mib": 1147.23828125,
+ "c_waited_s": 33.09289622306824,
+ "b_checksum_while_parked": "406fd81b48e87b2f",
+ "b_devices_while_parked": [
+  "cpu"
+ ],
+ "queue_when_b_returns": [
+  [
+   "student-B",
+   true
+  ],
+  [
+   "student-D",
+   false
+  ]
+ ],
+ "b_return_wait_s": 12.452171564102173,
+ "b_checksum_after_restore": "406fd81b48e87b2f",
+ "checksum_match": true,
+ "b_loss_after_restore": 8.531038284301758,
+ "b_loss_end": 8.61040210723877,
+ "d_state_while_b_restored": "queued",
+ "d_waited_s": 23.73886513710022,
+ "stats": {
+  "reclaimed_gpu_s": 22.6,
+  "parks": 1,
+  "restores": 1,
+  "dry_would_reclaim_s": 0.0,
+  "dry_saved_wait_s": 0.0,
+  "receipts": [
+   {
+    "beneficiary": "student-C",
+    "owner": "student-B",
+    "waited_s": 33.1,
+    "saved_s": 10.1,
+    "open": false
+   }
+  ]
+ },
+ "b_park_s": 0.35760069999378175,
+ "b_parked_gib": 0.629,
+ "b_restore_s": 0.06148839998058975,
+ "grant_order_after_b_returns": [
+  "student-B",
+  "student-D"
+ ],
+ "returning_priority_worked": true,
+ "vram_end_mib": 307.65625,
+ "vram_back_to_baseline": true,
+ "duration_s": 112.89294695854187
+}

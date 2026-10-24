@@ -9,14 +9,21 @@ Rules that came out of testing on the laptop:
   moving it to the GPU breaks `optimizer.step()`. We only ever move tensors that were on a GPU.
 * Allocating pinned (page-locked) host memory is slow, so the pinned buffers are allocated on the
   first park (or up front with `prealloc()`) and reused for every later park.
+
+Second level, for long absences: `spill(path)` writes the parked state to disk and frees the host RAM
+too. Each tensor then points at a one-element placeholder expanded to its shape (no real memory, shape
+unchanged); `restore()` reads the file straight back onto the GPU and deletes it.
 """
 from __future__ import annotations
 
 import gc
 import hashlib
+import os
 import time
+import weakref
 from dataclasses import dataclass
-from typing import Iterator
+from pathlib import Path
+from typing import Any, Iterator
 
 import torch
 
@@ -41,25 +48,49 @@ class TensorParker:
 
     def __init__(self, pin_memory: bool = True):
         self.pin_memory = pin_memory
-        self._modules: list[tuple[str, torch.nn.Module]] = []
-        self._optimizers: list[tuple[str, torch.optim.Optimizer]] = []
-        self._tensors: list[tuple[str, torch.Tensor]] = []
+        # entries are (name, object) or, for auto-discovered objects, (name, weakref): a notebook variable
+        # the student deletes must not be kept alive by us
+        self._modules: list[tuple[str, Any]] = []
+        self._optimizers: list[tuple[str, Any]] = []
+        self._tensors: list[tuple[str, Any]] = []
+        self._ids: set[int] = set()                  # tracked objects, so nothing is tracked twice
         self._pinned: dict[str, torch.Tensor] = {}   # reused host buffers, keyed by tensor name
         self._home: dict[str, torch.device] = {}     # original device of each parked tensor
         self.parked = False
+        self.spill_path: Path | None = None          # set while the parked state lives on disk
 
     # ------------------------------------------------------------ registration
-    def track_module(self, module: torch.nn.Module, name: str | None = None) -> torch.nn.Module:
-        self._modules.append((name or f"module{len(self._modules)}", module))
+    def _add(self, bucket: list, prefix: str, obj: Any, name: str | None, weak: bool) -> bool:
+        if id(obj) in self._ids:
+            return False
+        self._ids.add(id(obj))
+        ref = weakref.ref(obj, lambda _r, i=id(obj): self._ids.discard(i)) if weak else obj
+        bucket.append((name or f"{prefix}{len(bucket)}", ref))
+        return True
+
+    def track_module(self, module: torch.nn.Module, name: str | None = None,
+                     weak: bool = False) -> torch.nn.Module:
+        self._add(self._modules, "module", module, name, weak)
         return module
 
-    def track_optimizer(self, opt: torch.optim.Optimizer, name: str | None = None) -> torch.optim.Optimizer:
-        self._optimizers.append((name or f"optim{len(self._optimizers)}", opt))
+    def track_optimizer(self, opt: torch.optim.Optimizer, name: str | None = None,
+                        weak: bool = False) -> torch.optim.Optimizer:
+        self._add(self._optimizers, "optim", opt, name, weak)
         return opt
 
-    def track_tensor(self, t: torch.Tensor, name: str | None = None) -> torch.Tensor:
-        self._tensors.append((name or f"tensor{len(self._tensors)}", t))
+    def track_tensor(self, t: torch.Tensor, name: str | None = None, weak: bool = False) -> torch.Tensor:
+        self._add(self._tensors, "tensor", t, name, weak)
         return t
+
+    def is_tracked(self, obj: Any) -> bool:
+        return id(obj) in self._ids
+
+    @staticmethod
+    def _live(bucket: list) -> Iterator[tuple[str, Any]]:
+        for name, ref in bucket:
+            obj = ref() if isinstance(ref, weakref.ref) else ref
+            if obj is not None:
+                yield name, obj
 
     def iter_tensors(self) -> Iterator[tuple[str, torch.Tensor]]:
         """Every tracked tensor once, with a stable name: params, grads, buffers, optimizer state, raw."""
@@ -70,17 +101,17 @@ class TensorParker:
                 seen.add(id(t))
                 yield name, t
 
-        for mname, m in self._modules:
+        for mname, m in self._live(self._modules):
             for pname, p in m.named_parameters():
                 yield from emit(f"{mname}.{pname}", p)
                 yield from emit(f"{mname}.{pname}.grad", p.grad)
             for bname, b in m.named_buffers():
                 yield from emit(f"{mname}.{bname}", b)
-        for oname, opt in self._optimizers:
+        for oname, opt in self._live(self._optimizers):
             for i, (param, state) in enumerate(opt.state.items()):
                 for key, v in state.items():
                     yield from emit(f"{oname}.{i}.{key}", v)
-        for tname, t in self._tensors:
+        for tname, t in self._live(self._tensors):
             yield from emit(tname, t)
 
     def gpu_bytes(self) -> int:
@@ -113,6 +144,12 @@ class TensorParker:
         reserved_before = torch.cuda.memory_reserved()
         t0 = time.perf_counter()
         torch.cuda.synchronize()  # no GPU work in flight (the caller holds the step lock as well)
+        for _, t in self._live(self._tensors):
+            # A result like `loss` or `out` keeps its autograd graph, and the graph keeps the GPU inputs it
+            # saved for backward. Drop the graph so that memory is freed too (no .backward() on a result
+            # computed before the park; views can't be detached in place and are never tracked).
+            if t.grad_fn is not None and t._base is None:
+                t.detach_()
         moved, n = 0, 0
         pairs = []
         for name, t in self.iter_tensors():
@@ -135,33 +172,69 @@ class TensorParker:
         self.parked = True
         return ParkStats(time.perf_counter() - t0, moved, n, reserved_before, torch.cuda.memory_reserved())
 
+    def spill(self, path: str | Path) -> ParkStats:
+        """Write the parked tensors to `path` and free their host RAM (second-level parking)."""
+        if not self.parked or self.spill_path is not None:
+            raise RuntimeError("spill needs a parked, not yet spilled session")
+        t0 = time.perf_counter()
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        state = {name: t.detach() for name, t in self.iter_tensors() if name in self._home}
+        tmp = path.with_suffix(".tmp")
+        torch.save(state, tmp)
+        os.replace(tmp, path)               # a crash mid-write never leaves a half file under the real name
+        moved = sum(t.numel() * t.element_size() for t in state.values())
+        del state
+        for name, t in self.iter_tensors():
+            if name in self._home:          # shape kept, storage is a single element
+                t.data = torch.zeros(1, dtype=t.dtype).expand(t.shape)
+        self._pinned.clear()
+        gc.collect()
+        self.spill_path = path
+        return ParkStats(time.perf_counter() - t0, moved, len(self._home), 0, torch.cuda.memory_reserved())
+
+    def _spilled_state(self) -> dict[str, torch.Tensor]:
+        return torch.load(self.spill_path, map_location="cpu", weights_only=True)
+
     def restore(self) -> ParkStats:
-        """Copy every parked tensor back to its original device."""
+        """Copy every parked tensor back to its original device (from RAM, or from disk if spilled)."""
         if not self.parked:
             raise RuntimeError("not parked")
         t0 = time.perf_counter()
+        source = self._spilled_state() if self.spill_path is not None else None
         moved, n = 0, 0
         for name, t in self.iter_tensors():
             home = self._home.get(name)
             if home is None:
                 continue
+            src = source[name] if source is not None else t.detach()
             new = torch.empty(t.shape, dtype=t.dtype, device=home)
-            new.copy_(t.detach(), non_blocking=self.pin_memory)
+            new.copy_(src, non_blocking=self.pin_memory and source is None)
             t.data = new
             moved += t.numel() * t.element_size()
             n += 1
         torch.cuda.synchronize()
         self._home.clear()
         self.parked = False
+        if self.spill_path is not None:
+            self.spill_path.unlink(missing_ok=True)
+            self.spill_path = None
         return ParkStats(time.perf_counter() - t0, moved, n, 0, torch.cuda.memory_reserved())
+
+    def discard_spill(self) -> None:
+        """Delete the spill file (the process is exiting without restoring)."""
+        if self.spill_path is not None:
+            self.spill_path.unlink(missing_ok=True)
 
     # ------------------------------------------------------------ verification
     def checksum(self) -> str:
         """SHA-256 over every tracked tensor's bytes, in a stable order (location independent)."""
         h = hashlib.sha256()
+        spilled = self._spilled_state() if self.spill_path is not None else {}
         for name, t in self.iter_tensors():
+            src = spilled.get(name, t).detach()
             h.update(name.encode())
-            h.update(t.detach().to("cpu").contiguous().reshape(-1).view(torch.uint8).numpy().tobytes())
+            h.update(src.to("cpu").contiguous().reshape(-1).view(torch.uint8).numpy().tobytes())
         return h.hexdigest()[:16]
 
     def devices(self) -> dict[str, str]:
