@@ -1,0 +1,17 @@
+.ranks { list-style: none; margin: 0; padding: 0; }
+.ranks li {
+  display: grid; grid-template-columns: 48px 140px 1fr 90px; grid-template-rows: auto auto; gap: 2px 16px; align-items: center;
+  padding: 14px 0; border-bottom: 1px dashed var(--line);
+}
+.rank { font-family: var(--mono); font-size: 13px; color: var(--muted); grid-row: span 2; }
+.rank.r1 { color: var(--accent); font-weight: 700; }
+.rank-name { font-size: 18px; letter-spacing: -0.02em; }
+.rank-bar { height: 8px; border-radius: 4px; background: var(--panel); overflow: hidden; }
+.rank-bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .8s cubic-bezier(.2, .8, .2, 1); }
+.rank-main { text-align: right; font-size: 16px; }
+.rank-meta { grid-column: 2 / -1; font-size: 12.5px; }
+@media (max-width: 640px) {
+  .ranks li { grid-template-columns: 36px 1fr 80px; }
+  .rank-bar { grid-column: 2 / -1; grid-row: 2; }
+  .rank-meta { grid-row: 3; }
+}

@@ -1,0 +1,9 @@
+.tl { list-style: none; margin: 0; padding: 0; position: relative; }
+.tl::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; border-left: 1px dashed var(--dash); }
+.tl li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 8px 0; position: relative; }
+.tl-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--surface); border: 2px solid var(--faint); margin-top: 5px; }
+.tl li.good .tl-dot { border-color: var(--good); }
+.tl li.bad .tl-dot { border-color: var(--bad); }
+.tl li.warn .tl-dot { border-color: var(--warn); }
+.tl li.accent .tl-dot { border-color: var(--accent); background: var(--accent-soft); }
+.tl-meta { display: flex; gap: 10px; }

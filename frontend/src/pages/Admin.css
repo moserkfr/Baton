@@ -1,0 +1,17 @@
+.admin .small { font-size: 13px; margin: 10px 0 0; }
+.mode-card {
+  display: grid; grid-template-columns: 1fr 1.2fr; gap: 28px; padding: 28px; border-radius: var(--radius);
+  background: var(--panel); transition: background .3s;
+}
+.mode-card.on { background: var(--warn-soft); }
+.mode-copy h2 { font-size: 30px; margin: 14px 0 8px; }
+.mode-copy p { color: var(--ink-2); margin: 0 0 18px; }
+.mode-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; background: var(--surface); padding: 20px; border-radius: 12px; box-shadow: var(--shadow); }
+.mode-form .action { grid-column: 1 / -1; }
+.field.inline { flex-direction: row; align-items: center; gap: 8px; }
+.md summary { cursor: pointer; margin-top: 16px; color: var(--ink-2); font-size: 14px; }
+.md pre { white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; background: var(--panel); padding: 16px; border-radius: 10px; }
+@media (max-width: 800px) {
+  .mode-card { grid-template-columns: 1fr; padding: 20px; }
+  .mode-form { grid-template-columns: 1fr; }
+}

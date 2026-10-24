@@ -1,0 +1,11 @@
+.results .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin: 20px 0; }
+.results figure { margin: 0; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.results figure img { width: 100%; display: block; border-radius: 6px; }
+.results figcaption { margin-top: 8px; color: #8a857d; }
+.facts { margin: 0; }
+.facts div { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px dashed color-mix(in srgb, var(--accent) 25%, transparent); font-size: 14px; }
+.facts dt { color: var(--ink-2); }
+.facts dd { margin: 0; font-weight: 600; text-align: right; }
+@media (max-width: 640px) {
+  .results .charts { grid-template-columns: 1fr; }
+}

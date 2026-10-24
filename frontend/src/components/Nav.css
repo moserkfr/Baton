@@ -1,0 +1,37 @@
+.nav {
+  position: sticky; top: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line);
+}
+.nav-inner { max-width: var(--max); margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 28px; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 600; letter-spacing: -0.03em; }
+.brand:hover { color: var(--ink); }
+.logo-mark { width: 22px; height: 22px; fill: var(--ink); }
+.links { display: flex; gap: 22px; font-size: 13.5px; color: var(--ink-2); }
+.links a.current { color: var(--ink); font-weight: 500; }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.me { font-size: 13px; color: var(--ink-2); }
+.icon-btn {
+  width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line); background: var(--surface);
+  border-radius: 8px; cursor: pointer;
+}
+.icon-btn svg { width: 16px; height: 16px; fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linecap: round; }
+.burger { display: none; }
+.mode-banner {
+  max-width: var(--max); margin: 0 auto; padding: 0 24px 10px; display: flex; gap: 10px; align-items: center;
+  font-size: 13px; color: var(--ink-2);
+}
+.mode-banner a { margin-left: auto; color: var(--accent); }
+
+@media (max-width: 1020px) {
+  .burger { display: grid; }
+  .links {
+    display: none; position: absolute; top: 100%; left: 0; right: 0; flex-direction: column; gap: 0;
+    background: var(--bg); border-bottom: 1px solid var(--line); padding: 8px 24px 16px;
+  }
+  .links.open { display: flex; }
+  .links a { padding: 10px 0; border-bottom: 1px dashed var(--line); }
+}
+@media (max-width: 640px) {
+  .nav-inner { padding: 10px 16px; gap: 12px; }
+  .me { display: none; }
+}

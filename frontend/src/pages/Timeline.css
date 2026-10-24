@@ -1,0 +1,7 @@
+.why-grid { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
+.why-list { list-style: none; margin: 0; padding: 0; }
+.why-list a { display: block; padding: 8px 10px; border-radius: 8px; font-size: 14px; }
+.why-list a.on { background: var(--surface); box-shadow: var(--shadow); }
+@media (max-width: 800px) {
+  .why-grid { grid-template-columns: 1fr; }
+}

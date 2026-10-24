@@ -1,0 +1,50 @@
+.lab .cells { margin-bottom: 20px; }
+
+.slot-map { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 18px; margin-bottom: 20px; }
+.slot-card {
+  border-radius: 12px; padding: 20px 22px; background: var(--panel); display: flex; flex-direction: column; gap: 12px;
+  cursor: pointer; transition: background .3s, transform .2s; position: relative;
+}
+.slot-card:hover { transform: translateY(-2px); }
+.slot-card.free { cursor: default; background: transparent; border: 1px dashed var(--dash); }
+.slot-card.active { background: var(--accent-soft); }
+.slot-card.warned { background: var(--warn-soft); }
+.slot-card.idle { background: var(--bad-soft); }
+.slot-top { display: flex; justify-content: space-between; align-items: center; }
+.slot-card h3 { font-size: 30px; letter-spacing: -0.03em; }
+.vram { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; padding: 12px; background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); }
+.vram i { aspect-ratio: 1.6; border-radius: 2px; background: var(--line); }
+.vram i.on { background: var(--accent); }
+.slot-card.active .vram i.on { animation: vram-pulse 1.6s ease-in-out infinite; }
+.slot-card.idle .vram i.on { background: var(--faint); }
+.slot-card.warned .vram i.on { background: var(--warn); animation: blink 1s infinite; }
+@keyframes vram-pulse { 50% { opacity: .55; } }
+.slot-stats { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+.slot-stats b { color: var(--ink); font-weight: 600; }
+.slot-warn { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 14px; }
+.slot-open { font-family: var(--mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+
+.queue, .parked, .tips, .log { list-style: none; margin: 0; padding: 0; }
+.queue li {
+  display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center; padding: 12px 0;
+  border-bottom: 1px dashed var(--line); cursor: pointer;
+}
+.queue li:hover .q-who b { color: var(--accent); }
+.q-pos { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--dash); border-radius: 8px; font-family: var(--mono); font-size: 13px; }
+.q-who { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.q-who .muted { width: 100%; font-size: 13px; }
+.q-eta { text-align: right; display: flex; flex-direction: column; }
+.q-eta b { font-size: 18px; font-weight: 500; }
+.parked li { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px dashed var(--line); cursor: pointer; }
+.parked .muted { font-size: 13px; }
+.tips li { padding: 10px 0; border-bottom: 1px dashed color-mix(in srgb, var(--accent) 25%, transparent); cursor: pointer; font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.log { max-height: 420px; overflow-y: auto; }
+.log li { display: grid; grid-template-columns: 90px 90px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+.log li.clickable { cursor: pointer; }
+.log li.clickable:hover { color: var(--accent); }
+
+@media (max-width: 640px) {
+  .log li { grid-template-columns: 70px 1fr; }
+  .log li > :last-child { grid-column: 1 / -1; }
+  .slot-card h3 { font-size: 24px; }
+}

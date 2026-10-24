@@ -1,0 +1,18 @@
+.user-pick { margin-bottom: 36px; padding-bottom: 28px; border-bottom: 1px solid var(--line); }
+.session-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.session-card {
+  background: var(--panel); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; cursor: pointer;
+  transition: transform .2s;
+}
+.session-card:hover { transform: translateY(-2px); }
+.session-card.active { background: var(--accent-soft); }
+.session-card.warned { background: var(--warn-soft); }
+.session-card h3 { font-size: 28px; }
+.session-card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
+.session-card .tip { font-size: 13px; margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface); }
+.inbox { list-style: none; margin: 0; padding: 0; }
+.inbox li { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; padding: 12px 0; border-bottom: 1px dashed var(--line); cursor: pointer; font-size: 14px; }
+.inbox li:hover b { color: var(--accent); }
+@media (max-width: 640px) {
+  .inbox li { grid-template-columns: 1fr; gap: 4px; }
+}

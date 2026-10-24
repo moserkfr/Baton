@@ -41,6 +41,7 @@ class ModeBody(BaseModel):
     minutes: float | None = None     # how long the mode lasts; None = until cleared
 
 STATIC = Path(__file__).parent / "static"
+FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
 def create_app(cfg: dict | None = None) -> FastAPI:
@@ -172,6 +173,8 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             raise HTTPException(400, (reply or {}).get("error", "no reply"))
         return reply
 
+    if FRONTEND.is_dir():            # the React frontend, after `npm run build` in frontend/
+        app.mount("/app", StaticFiles(directory=FRONTEND, html=True), name="app")
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     app.mount("/files", StaticFiles(directory=results), name="files")
     return app

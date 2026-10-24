@@ -12,7 +12,7 @@ Three layers:
    real daemon.
 3. **Dashboard**: a FastAPI page with the live slot map, queue, receipts and results.
 
-How it works and why: [docs/how-it-works.md](docs/how-it-works.md). Decisions: [DECISIONS.md](DECISIONS.md).
+How it works and why: [docs/how-it-works.md](docs/how-it-works.md).
 
 ## Headline results
 
@@ -90,6 +90,21 @@ Preview the dashboard without a GPU:
 
 Building a frontend? Everything is documented in [API.md](API.md), and FastAPI serves interactive docs at `/docs`.
 
+## React frontend (`frontend/`)
+
+A React app covering every API feature, with light and dark themes: a landing page (animated GPU
+showing a park and restore, culler vs Baton, demand chart, feature carousel), live lab (slot map,
+queue with ETA, parked sessions, receipts, tips, event log), "My page", "Why was I parked?",
+leaderboard, notifications inbox (toasts + browser notifications), admin (policy, deadline mode,
+dry-run report) and results. Clicking any session opens a bottom sheet with its live numbers, every
+control (snooze, park now, resume, step away) and its timeline. Each page is `src/pages/<Page>.jsx`
+with its own `.css`; the theme tokens live in `src/styles/base.css`.
+```powershell
+cd frontend; npm install
+npm run dev          # http://localhost:5173, proxies /api and /files to the dashboard on :8000
+npm run build        # writes frontend/dist, which the dashboard then serves at http://127.0.0.1:8000/app/
+```
+
 ## Using it from your own code
 
 ```python
@@ -136,7 +151,7 @@ baton/
   dashboard/   app.py, preview.py, static/
   cli/         gpuq.py
   protocol.py, config.py, runtime.py (PID tracking + safe cleanup)
-docs/          brief.md, how-it-works.md, feasibility scripts from the laptop check
+docs/          how-it-works.md, feasibility scripts from the laptop check
 results/       simulator tables + charts, park benchmark, scenario logs
 tests/         unit tests; tests/gpu needs the GPU
 ```

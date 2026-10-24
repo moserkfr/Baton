@@ -1,0 +1,12 @@
+/* Styles for small shared components used on several pages. */
+.receipts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.receipt { background: var(--surface); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); font-size: 14px; border-top: 3px dashed var(--accent-soft); }
+.receipt p { margin: 8px 0 10px; }
+.receipt-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); padding: 3px 0; border-top: 1px dashed var(--line); }
+.receipt-row.total { color: var(--ink); font-weight: 600; }
+
+.away-form { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.action { display: inline-flex; align-items: center; gap: 8px; }
+.action small { font-size: 12px; }
+
+.md-table td:not(:first-child), .md-table th:not(:first-child) { font-variant-numeric: tabular-nums; }

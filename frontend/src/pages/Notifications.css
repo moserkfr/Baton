@@ -1,0 +1,18 @@
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--dash); background: var(--surface); border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+.chip.on { background: var(--btn-bg); color: var(--btn-ink); border-color: var(--btn-bg); }
+.perm { margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.notes { list-style: none; margin: 0; padding: 0; }
+.notes li { display: grid; grid-template-columns: 90px 1fr auto; gap: 16px; align-items: start; padding: 14px 0; border-bottom: 1px dashed var(--line); cursor: pointer; font-size: 14px; }
+.notes li:hover b { color: var(--accent); }
+.note-kind { text-transform: uppercase; letter-spacing: .07em; font-size: 10.5px; padding: 3px 8px; border-radius: 6px; background: var(--panel); text-align: center; }
+.notes li.warn .note-kind { background: var(--warn-soft); }
+.notes li.parked .note-kind, .notes li.spilled .note-kind { background: var(--accent-soft); }
+.notes li.ready .note-kind, .notes li.restored .note-kind, .notes li.next .note-kind { background: var(--good-soft); }
+.note-meta { text-align: right; display: flex; flex-direction: column; font-size: 13px; }
+@media (max-width: 640px) {
+  .notes li { grid-template-columns: 1fr; gap: 6px; }
+  .note-kind { justify-self: start; }
+  .note-meta { text-align: left; }
+  .perm { margin-left: 0; }
+}
