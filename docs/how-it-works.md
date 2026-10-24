@@ -226,6 +226,50 @@ fixes the parking half on Linux). Slots are virtual on one GPU, so two slots sha
 
 ## Mini-lab and demo scenario (Phase 4)
 
+**What it does.** It turns the laptop into a tiny 2-slot lab server with four students, each a
+separate Python process using `gpuq_client`, and plays the demo story with the real daemon on the
+real GPU. Code: `baton/minilab/`. Run it with `python -m baton.minilab.scenario`
+(about 2 minutes); results land in `results/scenario_results.md` and the timestamped logs.
+
+| Student | Workload (synthetic data, no downloads) | GPU memory (measured) |
+| --- | --- | --- |
+| A | ResNet-18 (CIFAR-style, 11M params), SGD, 4096 CIFAR-sized images | ~0.5 GiB |
+| B | 42M-parameter GPT (12 layers, d=512), Adam, counting-sequence "text" | ~1.1 GiB |
+| C | MLP + a 1 GiB feature tensor on the GPU | ~1.1 GiB |
+| D | heavy job: 67M-parameter MLP, Adam, batch 2048 | ~2.0 GiB |
+
+**The story** (idle window 30 s, grace 10 s):
+1. A and B take both slots and train.
+2. B stops (lunch). C asks for a GPU and is **queued**.
+3. B is warned after 31 s idle and **parked** 10 s later, in 0.3 s. Device memory drops by ~1 GiB, and
+   C gets B's slot instantly.
+4. D (a heavy job) asks for a GPU and is queued.
+5. B comes back and runs a cell. No slot is free, so B is queued **ahead of D** (returning-owner
+   priority), even though D waited longer. When C finishes, B is restored in under 0.1 s. Its
+   checksum is **identical** before parking, while parked (tensors on the CPU), and after restoring.
+6. A finishes; D gets that slot. Everyone leaves; VRAM returns exactly to the starting value.
+
+**Why it's built this way.**
+- *Separate processes,* exactly like real students: separate CUDA contexts, PIDs and memory caps.
+- *Students obey stdin commands* (`work`, `touch`, `checksum`, `exit`) and print JSON events, so the
+  scenario can be scripted and every step logged with a timestamp. A new command interrupts a running
+  `work`, so the script controls exactly when A stops.
+- *Every process prints its own PID first*, and the launcher records both the launcher PID and the real
+  PID, because on Windows killing a venv launcher doesn't kill its child.
+- *B's data is learnable* (sequences counting up with a random stride), so its loss moves. The strong
+  correctness evidence is the checksum match, plus the GPU test showing bit-identical training with and
+  without a park/restore.
+
+**What it found.** The first attempt exposed a real bug: a queued client sent no memory reports until
+granted, so the daemon dropped it as "silent" after 15 s. Clients now report from the moment they
+register (there's a regression check in `tests/gpu/test_client.py`). The failed log is kept as
+`results/scenario_failed_attempt1.log`.
+
+**Honest caveats.** Both slots share one GPU's compute (time-slicing), so A slows down while C runs. B
+moved 0.63 GiB of tensors while it had 1.15 GiB reserved: the rest was PyTorch's cache of temporary
+activations, which is simply released, not copied. About 100 MiB of CUDA context per process stays on
+the GPU.
+
 ## Dashboard (Phase 5)
 
 ## cuda-checkpoint parker and CLI (Phase 6)

@@ -77,6 +77,8 @@ class GpuqClient:
         self.session = reply["session"]
         self._log("registered", reply)
         threading.Thread(target=self._reader, name="gpuq-reader", daemon=True).start()
+        # report from the start, also while queued: the daemon drops sessions that stay silent
+        threading.Thread(target=self._reporter, name="gpuq-reporter", daemon=True).start()
         if reply["state"] == "running":
             self._on_grant(reply)
         else:
@@ -84,7 +86,6 @@ class GpuqClient:
             self._say(f"all GPU slots busy; queued as {self.session}")
         if not self._granted.wait(timeout):
             raise TimeoutError("no GPU slot granted in time")
-        threading.Thread(target=self._reporter, name="gpuq-reporter", daemon=True).start()
         return self
 
     def close(self) -> None:

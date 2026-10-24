@@ -74,6 +74,7 @@ def test_register_queue_then_grant_reports_pid_and_memory():
     assert reg["pid"] == os.getpid() and reg["user"] == "alice"
     time.sleep(0.3)
     assert c.state == "queued"
+    assert d.expect("report")["state"] == "queued"  # keeps reporting while queued (else: dropped as silent)
     d.push({"type": "grant", "slot": 1, "cap_fraction": 0.367})
     t.join(5)
     assert c.state == "running" and c.slot == 1

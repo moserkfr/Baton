@@ -10,6 +10,8 @@ one tick loop. All of them call into the Daemon under its single lock, so the lo
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import socket
 import threading
 import time
@@ -130,6 +132,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--fake-monitor", action="store_true", help="no NVML (for machines without a GPU)")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="override a config key")
     args = ap.parse_args(argv)
+    print(json.dumps({"event": "pid", "pid": os.getpid()}), flush=True)  # real PID (venv launcher issue)
     overrides = parse_overrides(args.set)
     if args.dry_run:
         overrides["daemon.dry_run"] = True
