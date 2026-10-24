@@ -15,6 +15,7 @@ import os
 import socket
 import threading
 import time
+import traceback
 from typing import Any
 
 import yaml
@@ -104,11 +105,14 @@ class DaemonServer:
 
     def _tick_loop(self) -> None:
         while not self._stop.wait(self.poll):
-            with self.daemon.lock:
-                self.daemon.tick()
-                status = self.daemon.status()
-            if self.daemon.store:
-                self.daemon.store.save_snapshot(status["time"], status)
+            try:
+                with self.daemon.lock:
+                    self.daemon.tick()
+                    status = self.daemon.status()
+                if self.daemon.store:
+                    self.daemon.store.save_snapshot(status["time"], status)
+            except Exception:   # one bad tick (NVML hiccup, locked db) must not stop every later one
+                traceback.print_exc()
 
 
 def build_daemon(cfg: dict[str, Any], fake_monitor: bool = False, echo: bool = True) -> Daemon:

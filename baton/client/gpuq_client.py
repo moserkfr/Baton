@@ -69,6 +69,7 @@ class GpuqClient:
         self._granted = threading.Event()
         self._resumed = threading.Event()
         self._resume_requested = False
+        self._resume_error: str | None = None
         self._stop = threading.Event()
         self._sock: socket.socket | None = None
         self._f = None
@@ -196,7 +197,7 @@ class GpuqClient:
 
     def _wait_for_resume(self) -> None:
         if not self._resume_requested:
-            self._resume_requested = True
+            self._resume_requested, self._resume_error = True, None
             self._resumed.clear()
             self._say("session is parked; asking the daemon for a GPU slot")
             self._log("request", {})
@@ -204,6 +205,9 @@ class GpuqClient:
         while not self._resumed.wait(0.5):
             if self.state == "disconnected":
                 break
+        if self._resume_error is not None:   # still parked; the next step asks again
+            error, self._resume_error = self._resume_error, None
+            raise RuntimeError(f"could not restore the parked session: {error}")
 
     # ------------------------------------------------------------ background threads
     def _reader(self) -> None:
@@ -288,8 +292,11 @@ class GpuqClient:
                     torch.cuda.set_per_process_memory_fraction(float(frac))
                 try:
                     stats = self.parker.restore()
-                except Exception as e:
+                except Exception as e:   # e.g. out of memory: stay parked and wake the waiting step
+                    self.state, self._resume_requested, self._resume_error = "parked", False, repr(e)
+                    self._say(f"restore failed: {e!r}")
                     self._send({"type": "resume_failed", "error": repr(e)})
+                    self._resumed.set()
                     return
                 seconds = stats.seconds
             else:

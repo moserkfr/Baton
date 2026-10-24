@@ -105,6 +105,20 @@ def read_snapshot(path: str | Path) -> dict[str, Any] | None:
     return json.loads(row[1]) if row else None
 
 
+def read_snapshot_time(path: str | Path) -> float | None:
+    """Just the snapshot's timestamp: a cheap 'has anything changed?' check for polling readers."""
+    db = _ro(path)
+    if db is None:
+        return None
+    try:
+        row = db.execute("SELECT ts FROM snapshot WHERE id = 1").fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        db.close()
+    return row[0] if row else None
+
+
 def read_events(path: str | Path, since_ts: float = 0.0, limit: int = 200, after_id: int = 0,
                 kinds: list[str] | None = None, user: str | None = None) -> list[dict[str, Any]]:
     """Newest first. `after_id` lets a stream fetch only what it hasn't seen."""

@@ -169,3 +169,38 @@ def test_fail_open_when_daemon_dies_while_parked():
         y = x * 2
     assert x.device.type == "cuda" and y.device.type == "cuda"
     c.close()
+
+
+def test_failed_restore_raises_in_step_instead_of_hanging():
+    d = FakeDaemon()
+    c = GpuqClient("erin", port=d.port, verbose=False, report_interval=0.2).connect()
+    c.track(torch.ones(1024, device="cuda"), "x")
+    d.push({"type": "park"})
+    d.expect("parked")
+    real_restore = c.parker.restore
+    c.parker.restore = lambda: (_ for _ in ()).throw(torch.cuda.OutOfMemoryError("no room"))
+    errors = []
+
+    def step():
+        try:
+            with c.step():
+                pass
+        except RuntimeError as e:
+            errors.append(e)
+
+    t = threading.Thread(target=step)
+    t.start()
+    d.expect("request")
+    d.push({"type": "resume", "slot": 0, "cap_fraction": 0.367})
+    assert d.expect("resume_failed")["error"]
+    t.join(5)
+    assert not t.is_alive() and errors and c.parker.parked
+    c.parker.restore = real_restore                   # the next step asks again and succeeds
+    t = threading.Thread(target=step)
+    t.start()
+    d.expect("request")
+    d.push({"type": "resume", "slot": 0, "cap_fraction": 0.367})
+    d.expect("resumed")
+    t.join(5)
+    assert not t.is_alive() and not c.parker.parked and len(errors) == 1
+    c.close()

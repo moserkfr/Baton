@@ -205,12 +205,12 @@ class Daemon:
         elif kind == "parked":
             self._parked(s, float(msg.get("park_s", 0.0)), int(msg.get("bytes", 0)))
         elif kind == "park_failed":
-            s.state, s.last_active = ACTIVE, now
-            self._event("park_failed", s, error=msg.get("error", ""))
+            if s.state == PARKING:      # a late failure after a park timeout changes nothing
+                self._park_failed(s, msg.get("error", ""))
         elif kind == "resumed":
             self._resumed(s, float(msg.get("restore_s", 0.0)))
         elif kind == "resume_failed":
-            self._event("resume_failed", s, error=msg.get("error", ""))
+            self._resume_failed(s, msg.get("error", ""))
         elif kind == "spilled":
             self._spilled(s, float(msg.get("seconds", 0.0)), int(msg.get("bytes", 0)))
         elif kind == "spill_failed":
@@ -278,8 +278,10 @@ class Daemon:
                 self._event("restoring", s, slot=slot, waited_s=waited)
                 res = self.parker.resume(s, slot, self.slots.cap_fraction)
                 if res is not None:
-                    self._resumed(s, res.seconds) if res.ok else self._event("resume_failed", s, error=res.error)
-            else:                   # a new session leaving the queue
+                    self._resumed(s, res.seconds) if res.ok else self._resume_failed(s, res.error)
+                if s.slot is None:  # the restore failed at once and gave the slot back
+                    continue
+            else:                  # a new session leaving the queue
                 s.state, s.last_active, s.notified_next = ACTIVE, now, False
                 s.send({"type": "grant", "slot": slot, "cap_fraction": self.slots.cap_fraction})
                 self._event("grant", s, slot=slot, waited_s=waited)
@@ -312,11 +314,16 @@ class Daemon:
             if res.ok:
                 self._parked(s, res.seconds, res.bytes)
             else:
-                s.state, s.last_active = ACTIVE, self.clock()
-                self._event("park_failed", s, error=res.error)
+                self._park_failed(s, res.error)
+
+    def _park_failed(self, s: Session, error: str) -> None:
+        s.state, s.last_active, s.pending_request = ACTIVE, self.clock(), False
+        self._event("park_failed", s, error=error)
 
     def _parked(self, s: Session, park_s: float, nbytes: int) -> None:
-        if s.state != PARKING:
+        # Also accept a park that finished after park_timeout_s gave the session back its active state:
+        # the client's memory really is in RAM now, and ignoring the ack would leave it waiting forever.
+        if s.state != PARKING and not (s.state in (ACTIVE, IDLE, WARNED) and s.slot is not None):
             return
         now = self.clock()
         s.state, s.parked_at, s.parks, s.last_park_s = PARKED, now, s.parks + 1, park_s
@@ -358,6 +365,15 @@ class Daemon:
         self._event("restored", s, restore_s=restore_s, waited_s=now - s.request_since, slot=s.slot)
         self._notify(s, "restored", "Welcome back",
                      f"Restored onto slot {s.slot} in {restore_s:.2f} s, every tensor exactly as you left it.")
+
+    def _resume_failed(self, s: Session, error: str) -> None:
+        """The state is still parked: free the slot again instead of holding it in `restoring` forever."""
+        self._event("resume_failed", s, error=error)
+        if s.state != RESTORING:
+            return
+        s.state = PARKED
+        self._release(s)
+        self._dispatch()
 
     def _spilled(self, s: Session, seconds: float, nbytes: int) -> None:
         if s.state != PARKED:
@@ -450,7 +466,7 @@ class Daemon:
                 self.disconnect(s.sid, reason="silent")
                 continue
             if s.state == PARKING and now - s.park_started > self.park_timeout_s:
-                s.state, s.last_active = ACTIVE, now
+                s.state, s.last_active, s.pending_request = ACTIVE, now, False
                 self._event("park_timeout", s)
                 continue
             if s.state == PARKED:

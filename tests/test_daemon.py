@@ -189,6 +189,44 @@ def test_park_timeout_returns_session_to_active():
     assert any(e["kind"] == "park_timeout" for e in d.events)
 
 
+def test_late_park_ack_after_timeout_is_accepted():
+    d, clock, mon = make(**{"parker.park_timeout_s": 5, "slots.count": 1})
+    b, hb, _ = join(d, "B", 102)
+    c, hc, _ = join(d, "C", 103)
+    run(d, clock, mon, 41)
+    run(d, clock, mon, 6)                             # timed out: B is active again, still on the slot
+    assert d.sessions[b].state == ACTIVE
+    d.on_message(b, {"type": "parked", "park_s": 9.0, "bytes": 1})   # the slow park did finish
+    assert d.sessions[b].state == PARKED and d.sessions[c].state == ACTIVE
+    d.on_message(b, {"type": "request"})              # and the owner can still get it back
+    assert b in d.queue
+
+
+def test_stray_park_failed_does_not_change_state():
+    d, clock, mon = make()
+    b, hb, _ = join(d, "B", 102)
+    d.control({"type": "park_now", "session": b})
+    d.on_message(b, {"type": "parked", "park_s": 1.0, "bytes": 1})
+    d.on_message(b, {"type": "park_failed", "error": "late"})
+    assert d.sessions[b].state == PARKED
+
+
+def test_failed_restore_frees_the_slot_and_can_be_retried():
+    d, clock, mon = make(**{"slots.count": 1})
+    b, hb, _ = join(d, "B", 102)
+    c, hc, _ = join(d, "C", 103)
+    d.control({"type": "park_now", "session": b})
+    d.on_message(b, {"type": "parked", "park_s": 1.0, "bytes": 1})
+    assert d.sessions[c].state == ACTIVE
+    d.on_message(b, {"type": "request"})
+    d.disconnect(c)                                   # B gets the slot back and starts restoring
+    assert d.sessions[b].state == RESTORING
+    d.on_message(b, {"type": "resume_failed", "error": "out of memory"})
+    assert d.sessions[b].state == PARKED and d.slots.n_free() == 1
+    d.on_message(b, {"type": "request"})              # the client's next step asks again
+    assert d.sessions[b].state == RESTORING
+
+
 def test_manual_park_now_and_resume_controls():
     d, clock, mon = make()
     b, hb, _ = join(d, "B", 102)

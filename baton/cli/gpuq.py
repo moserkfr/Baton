@@ -191,12 +191,16 @@ def cmd_request(cfg: dict, args) -> int:
     if not reply:
         print("no reply from daemon", file=sys.stderr)
         return 1
-    stop = threading.Event()
+    stop, send_lock = threading.Event(), threading.Lock()
+
+    def send(msg: dict) -> None:   # heartbeat and main thread share the stream; keep lines whole
+        with send_lock:
+            protocol.send(f, msg)
 
     def heartbeat():  # the daemon drops sessions that stay silent
         while not stop.wait(1.0):
             try:
-                protocol.send(f, {"type": "report", "mem_reserved": 0, "steps": 0, "state": "cli"})
+                send({"type": "report", "mem_reserved": 0, "steps": 0, "state": "cli"})
             except OSError:
                 return
 
@@ -224,7 +228,7 @@ def cmd_request(cfg: dict, args) -> int:
     finally:
         stop.set()
         try:
-            protocol.send(f, {"type": "bye"})
+            send({"type": "bye"})
         except OSError:
             pass
         sock.close()

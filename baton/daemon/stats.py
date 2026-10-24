@@ -6,7 +6,6 @@ the event log (receipts, waits, snoozes), and, while the daemon is running, the 
 from __future__ import annotations
 
 import time
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +22,7 @@ def _blank(user: str) -> dict[str, Any]:
 
 def user_stats(db: str | Path, since_ts: float = 0.0, now: float | None = None) -> dict[str, dict[str, Any]]:
     now = time.time() if now is None else now
-    out: dict[str, dict[str, Any]] = defaultdict(lambda: _blank(""))
+    out: dict[str, dict[str, Any]] = {}
 
     def row(user: str) -> dict[str, Any]:
         if user not in out:

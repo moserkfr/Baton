@@ -25,7 +25,7 @@ from .. import protocol
 from ..config import load_config, resolve_path
 from ..daemon.dryrun import dryrun_report
 from ..daemon.explain import timeline
-from ..daemon.state import read_events, read_session_events, read_sessions, read_snapshot
+from ..daemon.state import read_events, read_session_events, read_sessions, read_snapshot, read_snapshot_time
 from ..daemon.stats import leaderboard, user_stats
 
 
@@ -79,9 +79,10 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             if latest:
                 last_id = latest[0]["id"]
             while True:
-                snap = read_snapshot(db)
-                if snap is not None and snap["time"] != last_ts:
-                    last_ts = snap["time"]
+                ts = read_snapshot_time(db)
+                snap = read_snapshot(db) if ts is not None and ts != last_ts else None
+                if snap is not None:
+                    last_ts = ts
                     yield f"event: status\ndata: {json.dumps(snap)}\n\n"
                 new = read_events(db, limit=200, after_id=last_id)
                 if new:
