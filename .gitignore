@@ -4,3 +4,18 @@ __pycache__/
 .pytest_cache/
 data/
 *.log
+node_modules/
+frontend/dist/
+
+# Local notes and tool settings
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+PROGRESS.md
+MORNING_REPORT.md
+BLOCKERS.md
+docs/brief.md
+DECISIONS.md
+
+# Local media
+*.mp4
