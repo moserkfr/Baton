@@ -10,14 +10,13 @@ const LINKS = [
 ];
 
 export function Logo() {
-  // Four memory dies around a core: a tiny GPU.
+  // The handoff: a block of GPU work carried from one slot to the next.
   return (
     <svg className="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="3.2" />
-      <circle cx="12" cy="4.2" r="2.6" /><circle cx="12" cy="19.8" r="2.6" />
-      <circle cx="4.2" cy="12" r="2.6" /><circle cx="19.8" cy="12" r="2.6" />
-      <circle cx="6.5" cy="6.5" r="1.6" /><circle cx="17.5" cy="6.5" r="1.6" />
-      <circle cx="6.5" cy="17.5" r="1.6" /><circle cx="17.5" cy="17.5" r="1.6" />
+      <rect className="slot" x="2" y="9.5" width="8.5" height="11" rx="2.2" />
+      <rect className="slot" x="13.5" y="9.5" width="8.5" height="11" rx="2.2" />
+      <rect className="block" x="15.5" y="13.25" width="4.5" height="5.25" rx="1.1" />
+      <path className="arc" d="M6.25 7.5C6.25 2.8 17.75 2.8 17.75 6.6M15.6 5.3L17.75 7.5L19.9 5.3" />
     </svg>
   );
 }

@@ -1,4 +1,4 @@
-# Baton
+# <img src="docs/logo.svg" alt="" width="36" align="top"> Baton
 
 A small daemon that reclaims idle GPUs on shared lab servers. It spots processes that hold GPU memory but
 do no compute, **parks** them (GPU memory moved to host RAM, process still running), gives the freed GPU
