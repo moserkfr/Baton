@@ -6,9 +6,9 @@
 .brand { display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 600; letter-spacing: -0.03em; }
 .brand:hover { color: var(--ink); }
 .logo-mark { width: 22px; height: 22px; }
-.logo-mark .slot { fill: none; stroke: var(--ink); stroke-width: 1.8; }
-.logo-mark .block { fill: var(--accent); }
-.logo-mark .arc { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.logo-mark .body { fill: var(--ink); }
+.logo-mark .band { fill: var(--accent); }
+.logo-mark .trail { fill: none; stroke: var(--ink); stroke-width: 1.7; stroke-linecap: round; }
 .links { display: flex; gap: 22px; font-size: 13.5px; color: var(--ink-2); }
 .links a.current { color: var(--ink); font-weight: 500; }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }

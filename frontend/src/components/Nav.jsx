@@ -10,13 +10,14 @@ const LINKS = [
 ];
 
 export function Logo() {
-  // The handoff: a block of GPU work carried from one slot to the next.
+  // A relay baton in flight, its violet grip band the GPU being handed on.
   return (
     <svg className="logo-mark" viewBox="0 0 24 24" aria-hidden="true">
-      <rect className="slot" x="2" y="9.5" width="8.5" height="11" rx="2.2" />
-      <rect className="slot" x="13.5" y="9.5" width="8.5" height="11" rx="2.2" />
-      <rect className="block" x="15.5" y="13.25" width="4.5" height="5.25" rx="1.1" />
-      <path className="arc" d="M6.25 7.5C6.25 2.8 17.75 2.8 17.75 6.6M15.6 5.3L17.75 7.5L19.9 5.3" />
+      <g transform="rotate(-40 12 12)">
+        <rect className="body" x="6" y="8.75" width="15.5" height="6.5" rx="3.25" />
+        <rect className="band" x="12.5" y="8.75" width="3" height="6.5" />
+      </g>
+      <path className="trail" d="M4.86 15.64L2.03 18.02M7.18 18.4L4.35 20.78" />
     </svg>
   );
 }

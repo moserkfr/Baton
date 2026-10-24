@@ -1,16 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="Baton">
   <style>
-    .slot { fill: none; stroke: #1c1917; stroke-width: 1.8; }
-    .arc { fill: none; stroke: #6d5ef0; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .block { fill: #6d5ef0; }
+    .body { fill: #1c1917; }
+    .band { fill: #6d5ef0; }
+    .trail { fill: none; stroke: #1c1917; stroke-width: 1.7; stroke-linecap: round; }
     @media (prefers-color-scheme: dark) {
-      .slot { stroke: #f2f0eb; }
-      .arc { stroke: #9a8cff; }
-      .block { fill: #9a8cff; }
+      .body { fill: #f2f0eb; }
+      .band { fill: #9a8cff; }
+      .trail { stroke: #f2f0eb; }
     }
   </style>
-  <rect class="slot" x="2" y="9.5" width="8.5" height="11" rx="2.2"/>
-  <rect class="slot" x="13.5" y="9.5" width="8.5" height="11" rx="2.2"/>
-  <rect class="block" x="15.5" y="13.25" width="4.5" height="5.25" rx="1.1"/>
-  <path class="arc" d="M6.25 7.5C6.25 2.8 17.75 2.8 17.75 6.6M15.6 5.3L17.75 7.5L19.9 5.3"/>
+  <g transform="rotate(-40 12 12)">
+    <rect class="body" x="6" y="8.75" width="15.5" height="6.5" rx="3.25"/>
+    <rect class="band" x="12.5" y="8.75" width="3" height="6.5"/>
+  </g>
+  <path class="trail" d="M4.86 15.64L2.03 18.02M7.18 18.4L4.35 20.78"/>
 </svg>
