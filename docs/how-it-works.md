@@ -19,8 +19,6 @@ else can use it. Baton is one small program (a daemon) per GPU machine that:
 There are three layers to the demo: a simulator (lab-scale numbers), a live mini-lab on one laptop GPU
 (proof the mechanism works), and a dashboard.
 
-_Sections below are filled in phase by phase._
-
 ## Simulator (Phase 1)
 
 **What it does.** It replays the *same* week of lab demand under four policies and counts what each
@@ -292,6 +290,45 @@ the GPU.
   the only signal: every state has an icon and a word as well (a red slot also says "Idle: memory held,
   0% compute"). Status colours follow the dataviz reference status palette.
 - *Preview without a GPU:* `python -m baton.dashboard.preview` stages a realistic snapshot
-  in `data/preview.db`, which is handy if the GPU misbehaves on stage.
+  in `data/preview.db` (view it with `python -m baton.dashboard.app --db data/preview.db`), which is
+  handy if the GPU misbehaves on stage.
 
 ## cuda-checkpoint parker and CLI (Phase 6)
+
+**The cuda-checkpoint parker** (`baton/parkers/cuda_checkpoint.py`) implements the same
+two-method interface as the cooperative parker, but asks NVIDIA's driver to do the work:
+`cuda-checkpoint --toggle --pid <pid>` (after checking `--get-state`). The driver locks the
+process's CUDA calls, finishes queued GPU work, copies *all* device memory to host RAM and releases
+every GPU resource, **including the CUDA context**. The process keeps running, and any CUDA call it
+makes just blocks until it is resumed.
+
+Why it matters, and what to tell judges:
+- *No code changes for students.* Cooperative parking needs `import gpuq_client`; this doesn't.
+- *Frees the last ~100-145 MiB.* Our cooperative parker leaves the CUDA context behind (we measured
+  ~87 MiB of context + 18 MiB). Only the driver can tear the context down and rebuild it.
+- *Why it's a stub here.* `cuda-checkpoint` is Linux-only. On this Windows laptop, constructing the
+  parker raises a clear "not supported on this OS" error. The command-building logic is still
+  unit-tested with a fake runner, so the Linux path is more than a placeholder.
+- *Enabling it on a Linux lab server:* driver 570+, the `cuda-checkpoint` binary on PATH, the daemon
+  running as the students' user (or root), and `parker.kind: cuda_checkpoint` in `config.yaml`.
+- *Known gap:* the daemon still learns about sessions from client registrations. A full Linux version
+  would discover processes from NVML (per-process memory works on Linux) and detect an owner's return
+  via `gpuq resume` or a tiny hook.
+
+**The `gpuq` CLI** (`python -m baton.cli.gpuq ...`) talks to the daemon over the same
+JSON-lines channel and never imports torch, so it starts instantly:
+- `status`: slots, states, parked sessions, queue, stats. It falls back to the last SQLite snapshot if
+  the daemon is down.
+- `request --user alice`: wait for a slot and hold it until Ctrl+C. It sends heartbeats so the daemon
+  doesn't drop it.
+- `park-now B` / `resume B`: manual control for the demo (session id, user or name).
+
+## Where the numbers come from (cheat sheet)
+
+| Claim | Evidence |
+| --- | --- |
+| Idle GPU-hours 385 -> 69 a week, p95 wait 264 -> 0 min, 0 lost sessions | `results/sim_results.md` (simulated, 5 seeds) |
+| Synthetic workload matches NotebookOS statistics | calibration table in `results/sim_results.md`, enforced by a test |
+| Park 0.26-0.42 s, restore 0.08-0.25 s for 0.5-2 GiB | `results/park_bench.md` (measured on the laptop) |
+| Live demo works: park, queue, restore, identical checksum | `results/scenario_results.md` (two runs, plus logs) |
+| Training continues bit-identically after a park | `tests/gpu/test_tensor_parking.py` |

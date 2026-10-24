@@ -92,7 +92,10 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Baton dashboard")
     ap.add_argument("--host", default=cfg["dashboard"]["host"])
     ap.add_argument("--port", type=int, default=cfg["dashboard"]["port"])
+    ap.add_argument("--db", default=None, help="read this SQLite file instead (e.g. data/preview.db)")
     args = ap.parse_args(argv)
+    if args.db:
+        cfg["daemon"]["db_path"] = args.db
     print(json.dumps({"event": "pid", "pid": __import__("os").getpid()}), flush=True)
     uvicorn.run(create_app(cfg), host=args.host, port=args.port, log_level="warning")
 
