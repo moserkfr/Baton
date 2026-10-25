@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .. import protocol
 from ..config import load_config, resolve_path
+from ..daemon.state import clear
 from .launcher import MiniLab, port_is_free, wait_for_port
 
 
@@ -80,14 +81,14 @@ def next_run_number(out: Path) -> int:
     return n
 
 
-def run(idle_s: float, grace_s: float, pace: float, port: int) -> dict:
+def run(idle_s: float, grace_s: float, pace: float, port: int, delay: float = 0.0) -> dict:
+    for left in range(int(delay), 0, -1):   # time to switch to the browser and start a screen recording
+        print(f"\rstarting in {left:2d} s ", end="", flush=True)
+        time.sleep(1)
     out = resolve_path("results")
     n = next_run_number(out)
     rec = Recorder(out / f"scenario_run{n}.log")
-    db = resolve_path("data/state.db")
-    for p in (db, Path(str(db) + "-wal"), Path(str(db) + "-shm")):
-        if p.exists():
-            p.unlink()
+    clear(resolve_path("data/state.db"))   # fresh event log; works while the dashboard has it open
     summary: dict = {"run": n, "idle_window_s": idle_s, "grace_s": grace_s, "started": time.strftime("%Y-%m-%d %H:%M:%S")}
     summary["vram_baseline_mib"] = gpu_used_mib()
     rec("SCENARIO", f"VRAM before anything: {summary['vram_baseline_mib']:.0f} MiB")
@@ -217,11 +218,12 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--grace", type=float, default=10.0)
     ap.add_argument("--pace", type=float, default=1.0, help="multiply the pauses (slower live demo)")
     ap.add_argument("--port", type=int, default=None)
+    ap.add_argument("--delay", type=float, default=0.0, help="wait this many seconds before starting")
     args = ap.parse_args(argv)
     port = args.port or load_config()["daemon"]["port"]
     if not port_is_free("127.0.0.1", port):
         port += 1
-    run(args.idle, args.grace, args.pace, port)
+    run(args.idle, args.grace, args.pace, port, args.delay)
 
 
 if __name__ == "__main__":

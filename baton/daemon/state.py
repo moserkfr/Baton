@@ -79,6 +79,23 @@ class StateStore:
             self.db.close()
 
 
+def clear(path: str | Path) -> None:
+    """Empty every table for a fresh run. Unlike deleting the file, this works while readers (an open
+    dashboard tab streaming status) have it open, which Windows would refuse."""
+    if not Path(path).exists():
+        return
+    db = sqlite3.connect(path, timeout=10)
+    try:
+        for table in ("events", "snapshot", "sessions"):
+            try:
+                db.execute(f"DELETE FROM {table}")
+            except sqlite3.OperationalError:
+                pass   # table not created yet
+        db.commit()
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------- readers (dashboard, CLI)
 
 def _ro(path: str | Path) -> sqlite3.Connection | None:
